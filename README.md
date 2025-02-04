@@ -5,3 +5,4 @@
 - https://www.youtube.com/watch?v=r6XY80Z9eSA
 - https://www.youtube.com/watch?v=dRUIGgNBvVk  this video seems the correct
 - https://huggingface.co/docs/transformers/tasks/question_answer
+- https://huggingface.co/learn/nlp-course/chapter7/7?fw=pt
