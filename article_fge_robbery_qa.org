@@ -1,25 +1,514 @@
 #+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
 #+options: author:t broken-links:nil c:nil creator:nil
-#+options: d:(not "LOGBOOK") date:t e:t email:nil expand-links:t f:t
+#+options: d:(not "LOGBOOK") date:t e:t email:t expand-links:t f:t
 #+options: inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
-#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
-#+title: article_fge_robbery_qa
-#+date: <2025-02-05 Wed>
+#+options: tasks:t tex:t timestamp:t title:t toc:nil todo:t |:t
+#+title: Leveraging Transformer Models for Extractive Question Answering in Criminal Report Analysis
+#+date: 2025-02-05
 #+author: Lenin G. Falconí
 #+email: lenin.falconi@epn.edu.ec
 #+language: en
 #+select_tags: export
 #+exclude_tags: noexport
 #+creator: Emacs 27.1 (Org mode 9.7.5)
-#+cite_export:
-#+latex_class: article
-#+latex_class_options:
-#+latex_header:
+#+cite_export: biblatex
+#+latex_class: IEEEtran
+#+latex_class_options: [journal]
+#+startup: indent
+#+latex_header: 
 #+latex_header_extra:
 #+description:
-#+keywords:
+#+keywords: 
 #+subtitle:
 #+latex_footnote_command: \footnote{%s%s}
 #+latex_engraved_theme:
 #+latex_compiler: pdflatex
-#+date: \today
+
+#+latex_header: \usepackage{graphicx}
+#+latex_header: \usepackage{amsmath}
+#+latex_header: \usepackage{hyperref}
+#+latex_header: \usepackage{booktabs}
+#+latex_header: \usepackage{tabularx}
+
+#+bibliography: bibliography.bib
+
+#+LATEX_HEADER: \usepackage[backend=biber,style=ieee]{biblatex}
+#+begin_export latex
+
+\begin{abstract}
+
+This paper explores the application of transformer-based models for extractive question answering in the analysis of criminal reports, specifically targeting robbery cases handled by the Fiscalía General del Estado in Ecuador. By fine-tuning a pre-trained model, we aimed to enhance its capability to accurately extract pertinent information from crime reports. The fine-tuned model demonstrated an F1 score improvement, achieving 82.88, compared to the pre-trained model's F1 score of 81.70. Our approach involved preparing a dataset using generative artificial intelligence to extract answers to common questions in robbery cases, followed by meticulous preprocessing and fine-tuning. The results indicate that the fine-tuned model effectively retrieves relevant details, thereby offering a valuable tool for legal practitioners. Further, the study underscores the potential of transformer models in optimizing information retrieval processes within the justice system, ultimately contributing to more efficient case handling and better resource allocation.
+
+\end{abstract}
+#+end_export
+#+begin_export latex
+\begin{IEEEkeywords}
+transformer, natural language processing, law, machine learning
+\end{IEEEkeywords}
+#+end_export
+
+* Introduction
+Transformer models have emerged as powerful tools in natural language
+processing, enabling more accurate and efficient extraction of
+relevant information from complex texts such as criminal
+reports. These models utilize self-attention mechanisms to weigh the
+importance of different words in a sentence, allowing for better
+context understanding and improved performance in tasks like question
+answering. By fine-tuning these models on domain-specific datasets,
+researchers can enhance their ability to discern pertinent details and
+provide precise answers to inquiries related to criminal incidents.
+
+The implementation of extractive question answering systems in legal
+contexts not only enhances the efficiency of information retrieval but
+also addresses challenges related to data variability and complexity
+inherent in criminal reports. As these models are fine-tuned on
+diverse datasets, they can improve their generalizability across
+different types of legal documents, ensuring that critical details are
+accurately captured regardless of nuances in language or structure
+[cite:@jha2022extractive]. Moreover, recent advancements in model
+architectures, such as the integration of dynamic masking techniques,
+have shown promise in further refining performance by enabling models
+to better adapt to varying levels of difficulty in questions posed
+about complex narratives [cite:@Pearce_Zhan_Komanduri_Zhan_2021]. This
+evolution highlights the potential for transformer-based models to
+facilitate more informed decision-making processes within the justice
+system, ultimately contributing to enhanced outcomes for legal
+practitioners and stakeholders alike.
+
+The Fiscalía General del Estado, which is the Prosecutor’s Office in
+Ecuador, handles cases ranging from criminal investigations to public
+safety concerns, aiming to uphold justice and protect the rights of
+citizens. In this context, crimes of robbery are highly prevalent and
+present significant challenges for law enforcement
+agencies. Understanding the patterns and motivations behind these
+crimes can lead to more effective prevention strategies and better
+resource allocation, ultimately fostering a safer community for all
+citizens. Additionally, it is important to analyze all the information
+gathered through crime reports. Many users also rely on this
+information to access insurance coverage for items lost during theft
+(e.g., cell phones, computers, automobiles, automobile parts,
+etc.). The volume of cases that need to be reviewed by prosecutors is
+substantial. Consequently, it is of interest to explore the use of
+artificial intelligence in designing and training models that can help
+reduce the high demand and improve public service.
+
+In previous research, the classification problem of different types of
+robbery was explored using transformer-based models and
+fine-tuning. This paper further investigates the capabilities of
+extractive question answering. This approach could help retrieve
+important information from criminal reports, which could be used in
+investigations conducted by the Prosecutor’s Office as well as for
+statistical reports on robbery crimes.
+
+This paper is organized as follows. In Section [[Literature Review]], some
+common works in scientific literature regarding the use of Artificial
+Intelligence (AI) in Law is performend. Our methodology is presented
+in Section [[Methodology]], where we describe the construction of the
+dataset and the model training. In Section [[Results]], the performance of
+the fine tuned model is presented. Finally, relevant conclusiones and
+future works are addressed in Section [[Conclusion and Future Works]]
+* Literature Review
+
+There is a significant interest within both the scientific community
+and legal institutions in studying the applications of AI in this
+expansive field. The current state of the art in Natural Language
+Processing (NLP) with Deep Learning (DL) primarily focuses on the use
+of transformer-based architectures, which have demonstrated superior
+performance across various NLP tasks.
+
+In [cite:@Vold_Conrad_2021] the deployment of a RoBERTa Base
+question-answer classification model specifically for legal questions
+is discussed.  It compares the performance of this transformer model
+against a traditional linear SVM in the legal domain, using the
+PRIVACYQA dataset. The results indicate that RoBERTa significantly
+outperforms the SVM, achieving a 31% improvement in F1-score and a 41%
+improvement in Mean Reciprocal Rank, demonstrating the effectiveness
+of transformers in enhancing answer retrieval for legal inquiries. In
+[cite:@Shao_Guo_Chen_Zepeng_2019], the researchers focus on a
+Transformer-based neural network for answer selection in general
+question answering (QA) systems, not specifically in the legal
+domain. While Transformers are effective in extracting global
+information and improving answer selection, the research does not
+address their application in law-related question answering. For
+insights on using Transformers in legal contexts, further research
+specific to legal NLP applications would be necessary. For information
+retrieval, [cite:@Kim_Rabelo_Babiker_Rahman_Goebel_2024] discuss the
+use of transformer-based approaches for legal information retrieval
+and entailment, specifically in the context of the COLIEE
+competition. For case law retrieval (Task 1), a sentence-transformer
+model was employed to create numeric representations of case
+paragraphs, facilitating similarity assessments. In entailment (Task
+4), a fine-tuned DeBERTa large language model was utilized, achieving
+third place among eight teams. These methods demonstrate the
+effectiveness of transformers in addressing legal question answering
+challenges. Another area of interest is to predict legal judgments. In
+[cite:@Ghosh_Kumar_2024] six transformer-based models (BERT, XLNet,
+RoBERTa, DeBERTa, ELECTRA, and BigBird) are evaluated in predicting
+legal judgments using the ILDC dataset. It highlights the potential of
+these models in automating legal decision-making, with newer models
+achieving up to 80% accuracy compared to 76% for older models. This
+comparative analysis underscores the advancements in NLP technology
+and its applicability in the legal domain, suggesting a promising
+future for question answering in law through transformer
+models. Finally, in [cite:@Peric_Mijic_Stammbach_Ash_2020] the use of
+transformers to generate legal text is addressed, indicating their
+potential to assist in legal practice. The findings suggest that these
+models can effectively generate judicial opinions and help
+differentiate between human and machine-generated legal texts, which
+could be beneficial for tasks like drafting contracts and briefs,
+although direct application to question answering is not discussed.
+
+
+* Methodology
+In this paper, we present the model ~LeninGF/fge-robos-qa-model~[fn:1], which
+is a fine-tuned version of
+mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es. This
+model has been developed for the Fiscalía General del Estado to
+facilitate the extraction of answers from robbery crime cases. Our
+methodology is divided into the following steps, which are explained
+in the subsequent sections:
+
+1. Dataset Preparation
+2. Prompt Engineering
+3. Dataset Preprocessing
+4. Model Fine Tuning
+
+
+** Dataset Preparation  
+In order to prepare the dataset for this task, Generative Artificial
+Intelligence (GAI) was used in order to extract the answers for a
+defined group of common questions in robbery cases. The model used in
+this case was ~meta-llama/Meta-Llama-3-8B-Instruct~. First, an
+analysis of the number of words per crime report was performed. It
+showed a mean of 112 words with an upper limit of 150. Beyond 150, it
+could be considered outlier cases and for the lower limit of 82, cases
+with less words could also be rejected. As a consequence, we have
+considered to build the dataset only the crime report $w$ whose number
+of words $\Gamma(w)$ is $82 \leq \Gamma(w) \leq 150$. Figures
+\ref{fig:histogram-original-dataset} and \ref{fig:BoxPlotOriginal}
+show the histogram of $\Gamma(w)$ and a box Plot, respectively. The
+original dataset has a total of 174594 samples.
+
+#+begin_export latex
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{./images/histogramOriginalDataset.png}
+  \caption{\label{fig:histogram-original-dataset}Histogram Original Dataset }
+\end{figure}
+
+#+end_export
+
+#+begin_export latex
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{./images/boxPlotOriginalDataset.png}
+  \caption{\label{fig:BoxPlotOriginal}Box Plot Original Data }
+\end{figure}
+
+#+end_export
+
+** Prompt Engineering
+In this section, we describe the use of a Large Language Model (LLM)
+to extract answers to a set of common questions listed in Table
+[[tab:commonquestions]]. The LLM functions as an expert data science
+assistant with the goal of constructing a dataset in the SQuAD format
+in Spanish. For this purpose, the prompt receives the content of the
+crime report as the ~context~ and each of the questions from Table
+[[tab:commonquestions]] as the ~question~. The LLM was also instructed to
+retrieve a ~json~ format output with the variables:
+~context~,~question~, ~answer_text~, ~answer_start~, ~answer_end~, and
+~impossible_find_answer~. The latter where calculated by finding the
+~answer_text~ in the context. In the case that no answer was possible
+to be retrieved, either because there is no answer or because the LLM
+failed, the variable ~impossible_find_answer~ was set to True.
+
+
+#+caption:  Common questions
+#+label: tab:commonquestions
+|-------------------------------------------------------------------------|
+| Question                                                                |
+|-------------------------------------------------------------------------|
+| ¿Qué objetos fueron robados?                                            |
+| ¿En qué fecha ocurrió el incidente?                                     |
+| ¿A qué hora sucedió el robo?                                            |
+| ¿En qué dirección o entre qué calles sucedió el robo, suceso incidente? |
+| ¿Qué valor en dólares tenían los objetos sustraídos o robados?          |
+|-------------------------------------------------------------------------|                                                                                                                                                                                                                                                                                                    |
+
+
+After 4 hours of using the Inference Client from Hugging Face, a total
+of 1544 samples were processed, representing approximately 1% of the
+entire dataset. Due to computing constraints, it may be necessary to
+explore alternative approaches to optimize processing time and
+increase the number of samples processed. With the current approach,
+which allows for 20000 queries per day, it would take 43 days to scan
+the entire dataset. Additionally, upon reviewing the results, it was
+found that the LLM model failed to retrieve some answers and
+occasionally generated unrelated content. Consequently, manual
+verification of the obtained results is necessary. This procedures can
+be found in ~dataset_build.ipynb~ in our [[https://github.com/LeninGF/IAG-2024B-GenerativeQA][GitHub]] repository.
+
+** Dataset Preprocessing
+
+Once we obtained the 1544 samples, we proceeded to check their
+quality. In this case the variable ~impossible_find_answer~ helped to
+locate cases where the LLM failed. They were around 3000 cases. It
+must be noticed that the total dataset extracted at this stage was of
+$1544 \times 5 = 7705$ samples. Because each context or crime report
+received 5 questions. As a consequence, we kept only the cases where
+~impossible_find_answer=False~. Next, the number of words was studied
+with the aid of an histogram and a box plot for the answers. It was
+found that the upper limit should be 17 and also that there are cases
+where the number of words in the answer is of 0. Figure
+\ref{fig:histogramAnswers} shows the histogram of the number of words
+in answer and Figure \ref{fig:BoxPlotAnswers} shows the corresponding box
+plot. Consequently the conditions to accept samples were the
+following:
+- $\Gamma(w)>0$
+- $impossible_find_answer=False$
+
+Thus, a total of 4572 samples were used to form the final dataset for
+training and testing. The dataset was saved in
+[[https://huggingface.co/datasets/LeninGF/robos-question-answering][LeninGF/robos-question-answering]]. Our code can be found at
+~dataset_xplore_and_upload.ipynb~
+
+
+#+begin_export latex
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{./images/histogramAnswers.png}
+  \caption{\label{fig:histogramAnswers}Histogram Word Count Answers }
+\end{figure}
+
+#+end_export
+
+#+begin_export latex
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{./images/boxplotAnswers.png}
+  \caption{\label{fig:BoxPlotAnswers}Box Plot Word Count Answers}
+\end{figure}
+
+#+end_export
+
+** Model Fine-Tuning
+In this section we described our methodology to train a question
+answering model for the crime reports of Robbery of the Fiscalía
+General del Estado del Ecuador. The code can be found in
+~question-answering-Bert.ipynb~The procedure was the following
+
+*** Dataset Train and Test Split
+First, the dataset was divided into training and testing sets, with
+20% of the cases allocated for performance evaluation. Table
+[[tab:traintestsplit]] displays the number of samples in each set
+
+#+caption: Dataset Train and Test Split
+#+label: tab:traintestsplit
+| Partition | # Samples |
+|-----------+-----------|
+| Train     |      3657 |
+| Test      |       915 |
+| Total     |      4572 |
+
+*** Pre-trained Model Loading
+The ~mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es~ was
+selected to be fine tuned because it is a model trained for Spanish
+and Question Answering Tasks. As a matter of fact, it was tested
+without training and it performed with an F1-Score of 81.70.
+
+*** Preprocessing
+To fine-tune the model, both the question and the answer need to be
+tokenized. As a result of this process, the indices indicating the
+start and end of the answer must be recalculated based on the
+tokenized embedding. In the case of long text, truncation should be
+applied only to the context, and a window of 128 tokens was used to
+avoid losing the answer during truncation. However, in this scenario,
+since most of the current samples have no more than 100 words in the
+context, this issue is unlikely to occur; nonetheless, it has been
+addressed in the program.
+
+*** Evaluation Metrics
+Our next step was to define the metrics to be used to evaluate the
+performance of the model. In this case we use ~squad_v2~ which
+contains both the F1-SCORE and EXACT MATCH. A function was prepared in
+order to be used by the Trainer Class.
+
+*** Training
+In order to train the model, the parameters shown in Table
+[[tab:parameters]] were used. A small learning rate is recommended in Fine
+Tuning in order to re-use the pre-training from the original model and
+adapt the new model to the target dataset. Our results prove that it
+is possible to achieve a better performance on the target domain with
+the fine tuned model rather than using the pre-trained model. Although
+the difference in performance is small, it could be related to the
+fact that we were not able to use the whole dataset.
+
+#+caption: Training Parameters
+#+label: tab:parameters
+| Parameter             | Value2             |
+|-----------------------+--------------------|
+| Strategy              | epoch              |
+| Learning rate         | $2 \times 10^{-5}$ |
+| batch                 | 64                 |
+| epochs                | 10                 |
+| weight decay          | 0.01               |
+| fp16                  | True               |
+| metric for best model | F1 (eval)          |
+
+
+
+
+* Results
+
+In this section, we present the results of fine-tuning the model,
+along with the performance of the pre-trained model on the test
+set. This comparison was conducted to determine whether the fine-tuned
+model demonstrated any improvements over the original pre-trained
+model. Table \ref{tab:before-performance} shows the performance of the
+pre-trained model while Table \ref{tab:finetunedModel} shows the
+performance of the fine-tuned model. It is worth to notice that the
+latter improves over the former. The fine-tuned model achieved an F1
+SCORE of 82.88 on evaluation dataset.
+#+latex_header: \usepackage{booktabs}
+#+begin_export latex
+\begin{table}
+  \centering
+  \caption{Pre-trained Model Performance}
+  \label{tab:before-performance}
+  \scriptsize
+  \begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+eval\_loss & 0.9102 \\
+eval\_model\_preparation\_time & 0.0077 \\
+eval\_exact & 53.5519 \\
+eval\_f1 & 81.7041 \\
+eval\_total & 915.0000 \\
+eval\_HasAns\_exact & 53.5519 \\
+eval\_HasAns\_f1 & 81.7041 \\
+eval\_HasAns\_total & 915.0000 \\
+eval\_best\_exact & 53.5519 \\
+eval\_best\_exact\_thresh & 0.0000 \\
+eval\_best\_f1 & 81.7041 \\
+eval\_best\_f1\_thresh & 0.0000 \\
+eval\_runtime & 12.3982 \\
+eval\_samples\_per\_second & 73.8010 \\
+eval\_steps\_per\_second & 1.2100 \\
+\bottomrule
+\end{tabular}
+
+\end{table}
+#+end_export
+
+#+begin_export latex
+\begin{table}
+  \centering
+  \caption{Fine Tuned Model Performance}
+  \label{tab:finetunedModel}
+  \scriptsize
+  \begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+eval\_loss & 1.0088 \\
+eval\_model\_preparation\_time & 0.0077 \\
+eval\_exact & 55.7377 \\
+eval\_f1 & 82.8805 \\
+eval\_total & 915.0000 \\
+eval\_HasAns\_exact & 55.7377 \\
+eval\_HasAns\_f1 & 82.8805 \\
+eval\_HasAns\_total & 915.0000 \\
+eval\_best\_exact & 55.7377 \\
+eval\_best\_exact\_thresh & 0.0000 \\
+eval\_best\_f1 & 82.8805 \\
+eval\_best\_f1\_thresh & 0.0000 \\
+eval\_runtime & 12.8109 \\
+eval\_samples\_per\_second & 71.4240 \\
+eval\_steps\_per\_second & 1.1710 \\
+epoch & 10.0000 \\
+\bottomrule
+\end{tabular}
+
+\end{table}
+#+end_export
+
+As an example, we provide the following text and the answers that our
+fine-tuned model was able to extract from it in Table \ref{tab:example} together
+with an score.
+
+
+#+begin_quote
+  el día de ayer 17 de junio del 2020 aproximadamente a las 10h00
+estaba realizando una factura en el sector de cotocollao av legarda
+instantes en los cuales fui sorprendido por un sujeto de acento
+costeño mismos que bajo amenazas y con una cuchillo procedido a
+sustraerme lo siguiente un celular marca samsun modelo a10 s duo color
+negro de la operadora movistar asignado con el número xxxxxxxxxx imei
+xxxxxxxxxx perteneciente a la empresa alimentos yupi con lo antes
+expuesto solicito las respectivas investigaciones para mayor
+información comunicarse a los números xxxxxxxxxx
+#+end_quote
+
+#+begin_export latex
+\begin{table}[ht]
+  \centering
+  \caption{Example of question answer extraction}
+  \label{tab:example}
+  \scriptsize
+  \begin{tabularx}{.5\textwidth}{X X p{0.1\textwidth}}
+    \toprule
+    \textbf{Question} & \textbf{Answer} & \textbf{Score} \\
+\midrule
+¿Qué objetos fueron robados? & un celular marca samsun modelo a10 s duo color negro & 0.966 \\
+¿En qué fecha ocurrió el incidente? & el día de ayer 17 de junio del 2020 & 0.615 \\
+¿A qué hora sucedió el robo? & aproximadamente a las 10h00 & 0.983 \\
+¿En qué dirección o entre qué calles sucedió el robo, suceso o incidente? & sector de cotocollao av legarda & 0.483 \\
+¿Qué valor en dólares tenían los objetos sustraídos o robados? & 10 7234734 & 0.167 \\
+\bottomrule
+
+  \end{tabularx}
+
+\end{table}
+#+end_export
+
+
+It can be noticed from the sample that the score the model provides is
+indicative. The crime report has no information regarding the value of
+the objects or any amount of money stolen. However, the answer has a
+low score. This can help to process further the extraction performed
+by the model.
+* Conclusion and Future Works
+ 
+In this study, we demonstrated the effectiveness of transformer-based
+models for extractive question answering within the context of
+criminal report analysis. Our fine-tuned model showed a notable
+improvement, achieving an F1 score of 82.88 compared to the
+pre-trained model's score of 81.70. This indicates the potential for
+enhanced performance through domain-specific fine-tuning.
+
+The application of our model to robbery crime reports could facilitate
+the extraction of crucial information, supporting legal practitioners
+in their investigations and reporting. However, the study also
+highlighted some limitations, including the model's occasional
+inability to retrieve accurate answers and the need for manual
+verification of results. 
+
+Future work will focus on addressing these limitations by exploring
+other advanced techniques and by manual labeling of the dataset by
+experts peers. Additional computational resources are also necessary
+to process large datasets. Moreover, the integration of artificial
+intelligence in the legal domain holds promise for more efficient case
+handling and resource allocation, ultimately contributing to a safer
+community.
+
+We encourage further research and collaboration to refine these
+approaches and harness the full potential of AI in supporting the
+justice system.
+
+
+#+print_bibliography: 
+
+* Footnotes
+
+[fn:1][[https://huggingface.co/LeninGF/fge-robos-qa-model][LeninGF/fge-robos-qa-model]] 
