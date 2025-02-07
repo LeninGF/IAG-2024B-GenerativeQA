@@ -6,3 +6,9 @@
 - https://www.youtube.com/watch?v=dRUIGgNBvVk  this video seems the correct
 - https://huggingface.co/docs/transformers/tasks/question_answer
 - https://huggingface.co/learn/nlp-course/chapter7/7?fw=pt
+
+El siguiente enlace a github es bastante descriptivo sobre el
+procedimiento de entrenamiento del question answering
+
+https://colab.research.google.com/github/huggingface/notebooks/blob/master/examples/question_answering.ipynb#scrollTo=rXuFTAzDIrJe
+
