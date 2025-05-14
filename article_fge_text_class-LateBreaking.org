@@ -1,0 +1,172 @@
+#+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
+#+options: author:t broken-links:nil c:nil creator:nil
+#+options: d:(not "LOGBOOK") date:t e:t email:t expand-links:t f:t
+#+options: inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:nil todo:t |:t
+#+title: BERT-Based Fine-Tuning for Automated Tagging of Robbery Crime Narratives
+#+date: 2025-02-05
+#+author: Lenin G. Falconí
+#+email: lenin.falconi@epn.edu.ec
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 27.1 (Org mode 9.7.5)
+#+cite_export: biblatex
+#+latex_class: IEEEtran
+#+latex_class_options: [journal]
+#+startup: indent
+#+latex_header: 
+#+latex_header_extra:
+#+description:
+#+keywords: transformer, natural language processing, law, machine learning, crime
+#+subtitle:
+#+latex_footnote_command: \footnote{%s%s}
+#+latex_engraved_theme:
+#+latex_compiler: pdflatex
+
+#+latex_header: \usepackage{graphicx}
+#+latex_header: \usepackage{amsmath}
+#+latex_header: \usepackage{hyperref}
+#+latex_header: \usepackage{booktabs}
+#+latex_header: \usepackage{tabularx}
+#+latex_header: \newcommand{\abstractsection}[2]{\noindent\textbf{#1:}#2\par\vspace{0.5em}}
+
+#+bibliography: bibliography.bib
+
+#+LATEX_HEADER: \usepackage[backend=biber,style=ieee]{biblatex}
+#+begin_export latex
+
+%% This paper explores the application of transformer-based models for extractive question answering in the analysis of criminal reports, specifically targeting robbery cases handled by the Fiscalía General del Estado in Ecuador. By fine-tuning a pre-trained model, we aimed to enhance its capability to accurately extract pertinent information from crime reports. The fine-tuned model demonstrated an F1 score improvement, achieving 82.88, compared to the pre-trained model's F1 score of 81.70. Our approach involved preparing a dataset using generative artificial intelligence to extract answers to common questions in robbery cases, followed by meticulous preprocessing and fine-tuning. The results indicate that the fine-tuned model effectively retrieves relevant details, thereby offering a valuable tool for legal practitioners. Further, the study underscores the potential of transformer models in optimizing information retrieval processes within the justice system, ultimately contributing to more efficient case handling and better resource allocation.
+
+\begin{abstract}
+
+
+  \abstractsection{Background:}{ Accurate classification of crime
+    narratives is essential for generating reliable public safety
+    statistics. In Ecuador, the Comisión Especial de Estadística de
+    Seguridad, Justicia, Crimen y Transparencia (CEESJCT) manually
+    categorizes robbery incident reports, a process that is both
+    time-consuming and prone to human error. While transformer-based
+    models have revolutionized natural language processing,
+    particularly in English, their application for Spanish in legal
+    and security related texts, such as those associated with the
+    classification of robbery, remains underexplored. This study seeks
+    to address this challenge by developing a machine learning model
+    that automates the classification of crime reports pertaining to
+    robbery, leveraging the contextual strengths of transformer
+    architectures to address linguistic and domain-specific
+    challenges and improving overall accuracy and efficiency.  }
+
+
+  \abstractsection{Objective:}{ The primary objective of this study was
+    to automate the classification of robbery narratives into
+    standardized crime categories. For this purpose, a BERT model
+    built on transformer architecture was trained using a tailored
+    database of narratives and corresponding labels. The approach
+    began with transfer learning to establish a solid baseline, and
+    was further refined through fine tuning. Ultimately, the model
+    achieved improved performance by utilizing a larger dataset; each
+    stage contributed to notable enhancements. Model evaluation was
+    strengthened by close collaboration with key Ecuadorian
+    institutions, namely the Fiscalía General del Estado (FGE) and the
+    Instituto Nacional de Estadística y Censos (INEC), whose
+    cooperation proved pivotal in ensuring the model's accuracy and
+    reliability.}
+    
+
+  \abstractsection{Methods:}{ To achieve our objective, we employed a
+    multi-step methodology in three phases. \textbf{Phase 1:
+      Classification with transfer learning} A pre-trained
+    multilingual DistilBERT model that incorporates Spanish was
+    adapted as a feature extractor. The model’s bidirectional
+    attention mechanism and subword tokenization (WordPiece) proved
+    essential for capturing semantic relationships in crime
+    narratives, particularly when some words remain misspelled and
+    uncorrected for legal reasons protecting the victim's statement. A
+    dataset of 431,669 robbery reports (2014–2022) was tokenized into
+    sequences of 35–300 words, and split into training (63\%),
+    validation (16\%), and test (21\%) sets. Training with frozen
+    DistilBERT layers, followed of full connecting layers and dropout
+    achieved 80.5\% accuracy (F1-score: 0.80), though minority classes
+    like \textit{Robo a Unidades Económicas} showed limited
+    recall. \textbf{Phase 2: Fine-Tuning for Contextual Adaptation} To
+    address class imbalance and domain-specific language, the entire
+    DistilBERT model was unfrozen and fine-tuned with a reduced
+    learning rate ( $5 \times 10^{-5}$ ). The bidirectional attention
+    mechanism enabled the model to resolve ambiguities in the robbery
+    narratives, allowing the model to distinguish between \textit{robo
+      a domicilio} from \textit{robo a personas}. This fine-tune phase
+    improved overall accuracy to 90.3\% (F1-score: 0.90), achieving
+    significant gains for less frequent categories. Additionally, a
+    Flask web application was deployed for real-time predictions,
+    which demonstrated an accuracy of 89\% on unseen CEESJCT
+    data. \textbf{Phase 3: Scaling to Complex Taxonomies} The original
+    model categorized robbery crime reports into 6 different
+    categories. To extend the model to classify a total of 11
+    validated robbery categories, including nuanced labels such as
+    \textit{Robo en Instituciones Públicas}, a merged dataset of 1.1
+    million narratives was developed by combining police reports with
+    criminal complaints filed in the prosecutor's office. The model
+    was trained using TPU to process the entire dataset. DistilBERT’s
+    ability to capture long-range dependencies and accurately handle
+    compound nouns proved essential for parsing the complex
+    descriptions found in the reports. A notable improvement in
+    accuracy performance was achieved (95.5\% accuracy with an F1-score of
+    0.95). No data augmentation technique was employed so as not to
+    alter the inherent frequency distribution of the different crime
+    categories.}
+  
+
+  \abstractsection{Results: }{ The baseline transfer learning model
+    achieved moderate accuracy (80.5\%) but struggled with
+    semantically overlapping categories, such as distinguishing
+    \textit{Robo a Domicilio} from \textit{Robo a Unidades
+      Económicas}. Fine-tuning resolved many of these issues,
+    improving minority-class recall by up to 30\% and enabling
+    real-time predictions via a Flask interface. The final scaled
+    model demonstrated high robustness (95.5\% accuracy) on 11
+    categories, with cross-validation confirming consistent
+    performance across police and judicial narratives. Challenges
+    persisted for low-frequency classes like \textit{Robo en
+      Instituciones Públicas}, where limited training examples led to
+    confusion with \textit{Otros Robos}. Semantic similarity analysis
+    revealed near-identical embeddings (98.7\% cosine similarity) for
+    matched police and judicial reports, validating the model’s
+    consistency across different data sources.}
+    
+
+
+  \abstractsection{Conclusion:}{ This study presents a transformer-based
+    model for automating crime report classification in Ecuador’s
+    judicial system. By leveraging DistilBERT’s bidirectional
+    attention and WordPiece subword tokenization, the model
+    effectively captured contextual nuances in Spanish legal texts,
+    including compound nouns and domain-specific verbs. Fine-tuning
+    proved essential for adapting the pretrained architecture to
+    domain-specific tasks. Utilizing TPU resources enabled training on
+    more than 800 thousand samples, thereby ensuring robust
+    generalization. Key outcomes include a deployable Flask
+    application and a blueprint for integrating heterogeneous legal
+    data sources. Future work will focus on semi-supervised learning
+    for underrepresented categories and API integration with Ecuador’s
+    SIAF system. Overall, the results highlight the transformative
+    potential of transformer models in legal NLP, especially for
+    Spanish-language contexts where syntactic complexity and
+    specialized vocabularies pose unique challenges.}
+  
+\end{abstract}
+#+end_export
+
+
+
+#+begin_export latex
+\begin{IEEEkeywords}
+transformer, natural language processing, law, machine learning, legal nlp, nlp
+\end{IEEEkeywords}
+#+end_export
+
+
+
+
+#+print_bibliography: 
+

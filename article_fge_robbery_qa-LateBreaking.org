@@ -12,13 +12,13 @@
 #+exclude_tags: noexport
 #+creator: Emacs 27.1 (Org mode 9.7.5)
 #+cite_export: biblatex
-#+latex_class: IEEEtran
+#+latex_class: article
 #+latex_class_options: [journal]
 #+startup: indent
 #+latex_header: 
 #+latex_header_extra:
 #+description:
-#+keywords: 
+#+keywords: transformer, natural language processing, law, machine learning, crime
 #+subtitle:
 #+latex_footnote_command: \footnote{%s%s}
 #+latex_engraved_theme:
@@ -57,13 +57,18 @@
     Furthermore, our use of generative artificial intelligence to create a synthetic dataset highlights a practical approach to overcoming the challenges of data scarcity and privacy concerns in legal domains. Future work could explore the application of this methodology to other types of legal documents, as well as the integration of additional NLP techniques, such as named entity recognition and relation extraction, to further enhance the capabilities of QA systems in legal analytics. Overall, this study contributes to the growing body of research on the application of AI in the justice system, paving the way for more innovative and impactful solutions.}
 \end{abstract}
 #+end_export
-#+begin_export latex
+
+
+#+begin_comment
+,#+begin_export latex
 \begin{IEEEkeywords}
 transformer, natural language processing, law, machine learning
 \end{IEEEkeywords}
-#+end_export
+,#+end_export
+#+end_comment
 
-* Introduction
+#+begin_comment
+,* Introduction
 Transformer models have emerged as powerful tools in natural language
 processing, enabling more accurate and efficient extraction of
 relevant information from complex texts such as criminal
@@ -123,7 +128,7 @@ in Section [[Methodology]], where we describe the construction of the
 dataset and the model training. In Section [[Results]], the performance of
 the fine tuned model is presented. Finally, relevant conclusiones and
 future works are addressed in Section [[Conclusion and Future Works]]
-* Literature Review
+,* Literature Review
 
 There is a significant interest within both the scientific community
 and legal institutions in studying the applications of AI in this
@@ -175,7 +180,7 @@ could be beneficial for tasks like drafting contracts and briefs,
 although direct application to question answering is not discussed.
 
 
-* Methodology
+,* Methodology
 In this paper, we present the model ~LeninGF/fge-robos-qa-model~[fn:1], which
 is a fine-tuned version of
 mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es. This
@@ -190,7 +195,7 @@ in the subsequent sections:
 4. Model Fine Tuning
 
 
-** Dataset Preparation  
+,** Dataset Preparation  
 In order to prepare the dataset for this task, Generative Artificial
 Intelligence (GAI) was used in order to extract the answers for a
 defined group of common questions in robbery cases. The model used in
@@ -205,25 +210,25 @@ of words $\Gamma(w)$ is $82 \leq \Gamma(w) \leq 150$. Figures
 show the histogram of $\Gamma(w)$ and a box Plot, respectively. The
 original dataset has a total of 174594 samples.
 
-#+begin_export latex
+,#+begin_export latex
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{./images/histogramOriginalDataset.png}
   \caption{\label{fig:histogram-original-dataset}Histogram Original Dataset }
 \end{figure}
 
-#+end_export
+,#+end_export
 
-#+begin_export latex
+,#+begin_export latex
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{./images/boxPlotOriginalDataset.png}
   \caption{\label{fig:BoxPlotOriginal}Box Plot Original Data }
 \end{figure}
 
-#+end_export
+,#+end_export
 
-** Prompt Engineering
+,** Prompt Engineering
 In this section, we describe the use of a Large Language Model (LLM)
 to extract answers to a set of common questions listed in Table
 [[tab:commonquestions]]. The LLM functions as an expert data science
@@ -239,8 +244,8 @@ to be retrieved, either because there is no answer or because the LLM
 failed, the variable ~impossible_find_answer~ was set to True.
 
 
-#+caption:  Common questions
-#+label: tab:commonquestions
+,#+caption:  Common questions
+,#+label: tab:commonquestions
 |-------------------------------------------------------------------------|
 | Question                                                                |
 |-------------------------------------------------------------------------|
@@ -264,7 +269,7 @@ occasionally generated unrelated content. Consequently, manual
 verification of the obtained results is necessary. This procedures can
 be found in ~dataset_build.ipynb~ in our [[https://github.com/LeninGF/IAG-2024B-GenerativeQA][GitHub]] repository.
 
-** Dataset Preprocessing
+,** Dataset Preprocessing
 
 Once we obtained the 1544 samples, we proceeded to check their
 quality. In this case the variable ~impossible_find_answer~ helped to
@@ -289,50 +294,50 @@ training and testing. The dataset was saved in
 ~dataset_xplore_and_upload.ipynb~
 
 
-#+begin_export latex
+,#+begin_export latex
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{./images/histogramAnswers.png}
   \caption{\label{fig:histogramAnswers}Histogram Word Count Answers }
 \end{figure}
 
-#+end_export
+,#+end_export
 
-#+begin_export latex
+,#+begin_export latex
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{./images/boxplotAnswers.png}
   \caption{\label{fig:BoxPlotAnswers}Box Plot Word Count Answers}
 \end{figure}
 
-#+end_export
+,#+end_export
 
-** Model Fine-Tuning
+,** Model Fine-Tuning
 In this section we described our methodology to train a question
 answering model for the crime reports of Robbery of the Fiscalía
 General del Estado del Ecuador. The code can be found in
 ~question-answering-Bert.ipynb~The procedure was the following
 
-*** Dataset Train and Test Split
+,*** Dataset Train and Test Split
 First, the dataset was divided into training and testing sets, with
 20% of the cases allocated for performance evaluation. Table
 [[tab:traintestsplit]] displays the number of samples in each set
 
-#+caption: Dataset Train and Test Split
-#+label: tab:traintestsplit
+,#+caption: Dataset Train and Test Split
+,#+label: tab:traintestsplit
 | Partition | # Samples |
 |-----------+-----------|
 | Train     |      3657 |
 | Test      |       915 |
 | Total     |      4572 |
 
-*** Pre-trained Model Loading
+,*** Pre-trained Model Loading
 The ~mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es~ was
 selected to be fine tuned because it is a model trained for Spanish
 and Question Answering Tasks. As a matter of fact, it was tested
 without training and it performed with an F1-Score of 81.70.
 
-*** Preprocessing
+,*** Preprocessing
 To fine-tune the model, both the question and the answer need to be
 tokenized. As a result of this process, the indices indicating the
 start and end of the answer must be recalculated based on the
@@ -343,13 +348,13 @@ since most of the current samples have no more than 100 words in the
 context, this issue is unlikely to occur; nonetheless, it has been
 addressed in the program.
 
-*** Evaluation Metrics
+,*** Evaluation Metrics
 Our next step was to define the metrics to be used to evaluate the
 performance of the model. In this case we use ~squad_v2~ which
 contains both the F1-SCORE and EXACT MATCH. A function was prepared in
 order to be used by the Trainer Class.
 
-*** Training
+,*** Training
 In order to train the model, the parameters shown in Table
 [[tab:parameters]] were used. A small learning rate is recommended in Fine
 Tuning in order to re-use the pre-training from the original model and
@@ -359,8 +364,8 @@ the fine tuned model rather than using the pre-trained model. Although
 the difference in performance is small, it could be related to the
 fact that we were not able to use the whole dataset.
 
-#+caption: Training Parameters
-#+label: tab:parameters
+,#+caption: Training Parameters
+,#+label: tab:parameters
 | Parameter             | Value2             |
 |-----------------------+--------------------|
 | Strategy              | epoch              |
@@ -374,7 +379,7 @@ fact that we were not able to use the whole dataset.
 
 
 
-* Results
+,* Results
 
 In this section, we present the results of fine-tuning the model,
 along with the performance of the pre-trained model on the test
@@ -385,8 +390,8 @@ pre-trained model while Table \ref{tab:finetunedModel} shows the
 performance of the fine-tuned model. It is worth to notice that the
 latter improves over the former. The fine-tuned model achieved an F1
 SCORE of 82.88 on evaluation dataset.
-#+latex_header: \usepackage{booktabs}
-#+begin_export latex
+,#+latex_header: \usepackage{booktabs}
+,#+begin_export latex
 \begin{table}
   \centering
   \caption{Pre-trained Model Performance}
@@ -415,9 +420,9 @@ eval\_steps\_per\_second & 1.2100 \\
 \end{tabular}
 
 \end{table}
-#+end_export
+,#+end_export
 
-#+begin_export latex
+,#+begin_export latex
 \begin{table}
   \centering
   \caption{Fine Tuned Model Performance}
@@ -447,14 +452,14 @@ epoch & 10.0000 \\
 \end{tabular}
 
 \end{table}
-#+end_export
+,#+end_export
 
 As an example, we provide the following text and the answers that our
 fine-tuned model was able to extract from it in Table \ref{tab:example} together
 with an score.
 
 
-#+begin_quote
+,#+begin_quote
   el día de ayer 17 de junio del 2020 aproximadamente a las 10h00
 estaba realizando una factura en el sector de cotocollao av legarda
 instantes en los cuales fui sorprendido por un sujeto de acento
@@ -464,9 +469,9 @@ negro de la operadora movistar asignado con el número xxxxxxxxxx imei
 xxxxxxxxxx perteneciente a la empresa alimentos yupi con lo antes
 expuesto solicito las respectivas investigaciones para mayor
 información comunicarse a los números xxxxxxxxxx
-#+end_quote
+,#+end_quote
 
-#+begin_export latex
+,#+begin_export latex
 \begin{table}[ht]
   \centering
   \caption{Example of question answer extraction}
@@ -486,7 +491,7 @@ información comunicarse a los números xxxxxxxxxx
   \end{tabularx}
 
 \end{table}
-#+end_export
+,#+end_export
 
 
 It can be noticed from the sample that the score the model provides is
@@ -494,7 +499,7 @@ indicative. The crime report has no information regarding the value of
 the objects or any amount of money stolen. However, the answer has a
 low score. This can help to process further the extraction performed
 by the model.
-* Conclusion and Future Works
+,* Conclusion and Future Works
  
 In this study, we demonstrated the effectiveness of transformer-based
 models for extractive question answering within the context of
@@ -521,6 +526,7 @@ community.
 We encourage further research and collaboration to refine these
 approaches and harness the full potential of AI in supporting the
 justice system.
+#+end_comment
 
 
 #+print_bibliography: 
