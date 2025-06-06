@@ -1,12 +1,10 @@
 #+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
-#+options: author:t broken-links:nil c:nil creator:nil
-#+options: d:(not "LOGBOOK") date:t e:t email:t expand-links:t f:t
+#+options: author:nil broken-links:nil c:nil creator:nil
+#+options: d:(not "LOGBOOK") date:t e:t email:nil expand-links:t f:t
 #+options: inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
 #+options: tasks:t tex:t timestamp:t title:t toc:nil todo:t |:t
 #+title: Leveraging Transformer Models for Extractive Question Answering in Criminal Report Analysis
 #+date: 2025-02-05
-#+author: Lenin G. Falconí
-#+email: lenin.falconi@epn.edu.ec
 #+language: en
 #+select_tags: export
 #+exclude_tags: noexport
@@ -34,6 +32,18 @@
 #+bibliography: bibliography.bib
 
 #+LATEX_HEADER: \usepackage[backend=biber,style=ieee]{biblatex}
+
+#+LATEX_HEADER: \author{
+#+LATEX_HEADER:     \IEEEauthorblockN{Lenin G. Falconí\textsuperscript{1}, Myriam Hernández-Alvarez\textsuperscript{2}, Lorena Isabel Barona López\textsuperscript{3} }\\
+#+LATEX_HEADER:     \IEEEauthorblockA{\textsuperscript{1,2,3}Departmento de Informática y Ciencias de la Computación, Escuela Politécnica Nacional, Quito, Ecuador \\
+#+LATEX_HEADER:                         Email: lenin.falconi@epn.edu.ec, myriam.hernandez@epn.edu.ec, lorena.barona@epn.edu.ec}
+#+LATEX_HEADER: }
+
+
+#+begin_comment
+Colocar el nombre de Myriam al final en la version final de este articulo
+#+end_comment
+
 #+begin_export latex
 
 %% This paper explores the application of transformer-based models for extractive question answering in the analysis of criminal reports, specifically targeting robbery cases handled by the Fiscalía General del Estado in Ecuador. By fine-tuning a pre-trained model, we aimed to enhance its capability to accurately extract pertinent information from crime reports. The fine-tuned model demonstrated an F1 score improvement, achieving 82.88, compared to the pre-trained model's F1 score of 81.70. Our approach involved preparing a dataset using generative artificial intelligence to extract answers to common questions in robbery cases, followed by meticulous preprocessing and fine-tuning. The results indicate that the fine-tuned model effectively retrieves relevant details, thereby offering a valuable tool for legal practitioners. Further, the study underscores the potential of transformer models in optimizing information retrieval processes within the justice system, ultimately contributing to more efficient case handling and better resource allocation.

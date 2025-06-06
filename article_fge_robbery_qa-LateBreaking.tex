@@ -1,0 +1,61 @@
+% Created 2025-02-27 Thu 13:51
+% Intended LaTeX compiler: pdflatex
+\documentclass[journal]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\newcommand{\abstractsection}[2]{\noindent\textbf{#1:}#2\par\vspace{0.5em}}
+\usepackage[backend=biber]{biblatex}
+\addbibresource{bibliography.bib}
+\author{Lenin G. Falconí\thanks{lenin.falconi@epn.edu.ec}}
+\date{2025-02-05}
+\title{Leveraging Transformer Models for Extractive Question Answering in Criminal Report Analysis}
+\hypersetup{
+ pdfauthor={Lenin G. Falconí},
+ pdftitle={Leveraging Transformer Models for Extractive Question Answering in Criminal Report Analysis},
+ pdfkeywords={transformer, natural language processing, law, machine learning, crime},
+ pdfsubject={},
+ pdfcreator={Emacs 27.1 (Org mode 9.7.5)}, 
+ pdflang={English}}
+\begin{document}
+
+\maketitle
+
+%% This paper explores the application of transformer-based models for extractive question answering in the analysis of criminal reports, specifically targeting robbery cases handled by the Fiscalía General del Estado in Ecuador. By fine-tuning a pre-trained model, we aimed to enhance its capability to accurately extract pertinent information from crime reports. The fine-tuned model demonstrated an F1 score improvement, achieving 82.88, compared to the pre-trained model's F1 score of 81.70. Our approach involved preparing a dataset using generative artificial intelligence to extract answers to common questions in robbery cases, followed by meticulous preprocessing and fine-tuning. The results indicate that the fine-tuned model effectively retrieves relevant details, thereby offering a valuable tool for legal practitioners. Further, the study underscores the potential of transformer models in optimizing information retrieval processes within the justice system, ultimately contributing to more efficient case handling and better resource allocation.
+
+\begin{abstract}
+
+
+\abstractsection{Background}{Extractive question answering (QA) systems have gained significant attraction in various domains, including legal and criminal justice, due to their ability to automate information retrieval from large text corpora. Transformer-based models, such as BERT and its variants, have demonstrated remarkable performance in natural language processing (NLP) tasks, including QA. However, their application in domain-specific contexts, such as legal document analysis, requires careful adaptation to ensure accuracy and relevance. In the context of criminal justice, efficient extraction of information from crime reports is critical for case handling, resource allocation, and decision-making. This study focuses on robbery cases handled by the Fiscalía General del Estado in Ecuador, where the volume of reports and the complexity of legal language pose significant challenges for manual analysis. By leveraging transformer-based models, we aim to enhance the efficiency and accuracy of information retrieval from these reports, thereby supporting legal practitioners in their workflows and helps provide a better service for the community.}
+
+    \abstractsection{Objective}{The primary objective of this study is to investigate the effectiveness of fine-tuning transformer-based models for extractive QA tasks in the domain of criminal justice, specifically targeting robbery case reports. We aim to adapt a pre-trained transformer model to the unique linguistic and structural characteristics of legal documents, enabling it to accurately extract answers to common questions relevant to robbery cases. By doing so, we seek to demonstrate the potential of transformer models in optimizing information retrieval processes within the justice system, ultimately contributing to more efficient case handling and better resource allocation. The results of this research could be considered to improve current digital justice systems.}
+
+    \abstractsection{Methods}{To achieve our objective, we employed a multi-step methodology. First, we prepared a dataset tailored to the domain of robbery case reports. Given the scarcity of annotated legal datasets, we utilized generative artificial intelligence (GAI) to generate synthetic question-answer pairs based on a sample of real robbery reports using ~Meta-Llama-3-8B-Instruct~. This approach allowed us to create a diverse and representative dataset without compromising data privacy. The dataset was subsequently preprocessed and formatted according to the Stanford Question Answering Dataset (SQuAD) standards, specifically organizing the data into context, question and answer segments. Dataset generation utilized Huggingface Inference Client in order to save local computer power. The dataset was divided into training and test sets to evaluate the model's performance. A total of 4572 samples were used, with 3657 designated for training and the remaining 915 reserved for testing.
+
+    Next, we fine-tuned a Bert variation pre-trained transformer model (~bert-base-spanish-wwm-cased-finetuned-spa-squad2-es~) using the prepared dataset. The fine-tuning process involved optimizing hyperparameters, such as learning rate, batch size, and number of epochs, to ensure optimal performance on the extractive QA task. The training was performed using an NVIDIA Tesla T4 in Google Colab. The fine-tuned model was evaluated using standard metrics for QA models, including Exact Match (EM) and F1 score, to assess its performance in extracting relevant information from the crime reports.}
+
+    \abstractsection{Results}{The fine-tuned transformer model demonstrated significant improvements in performance compared to the base pre-trained model. Specifically, the fine-tuned model achieved an F1 score of 82.88, surpassing the pre-trained model's F1 score of 81.70. This improvement indicates that the fine-tuning process successfully adapted the model to the domain-specific characteristics of robbery case reports, enabling it to extract more accurate and relevant information. Additionally, the model exhibited robust performance across a range of question types, including those requiring the identification of specific details such as dates, locations, and robbed objects.} 
+
+
+    \abstractsection{Conclusion}{This study demonstrates the effectiveness of fine-tuning transformer-based models for extractive QA tasks in the domain of criminal justice. By adapting a pre-trained model to the unique characteristics of robbery case reports, we achieved significant improvements in performance, as evidenced by the higher F1 score. The results underscore the potential of transformer models to optimize information retrieval processes within the justice system, enabling more efficient case handling and better resource allocation. This could help to improve current digital systems and provide in the near future a better service to the community by helping the prosecutors in their investigations and leveraging their workloads.
+
+    Furthermore, our use of generative artificial intelligence to create a synthetic dataset highlights a practical approach to overcoming the challenges of data scarcity and privacy concerns in legal domains. Future work could explore the application of this methodology to other types of legal documents, as well as the integration of additional NLP techniques, such as named entity recognition and relation extraction, to further enhance the capabilities of QA systems in legal analytics. Overall, this study contributes to the growing body of research on the application of AI in the justice system, paving the way for more innovative and impactful solutions.}
+\end{abstract}
+
+
+\printbibliography
+\end{document}
