@@ -16,6 +16,8 @@ import os
 import sys
 
 from datasets import load_dataset
+from dotenv import load_dotenv
+from huggingface_hub import login
 
 sys.path.insert(0, os.path.dirname(__file__))
 from local_qa_generation import (  # noqa: E402
@@ -71,6 +73,15 @@ def build_filtered_dataset(dataset_path, limit=None):
 def main():
     args = parse_args()
     model_name = MODEL_CHOICES[args.model]
+
+    # Reads HUGGINGFACE_TOKEN from a .env file at the repo root (never commit the token).
+    load_dotenv()
+    hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    if not hf_token:
+        raise RuntimeError(
+            "HUGGINGFACE_TOKEN not found. Add it to a .env file at the repo root."
+        )
+    login(hf_token)
 
     filtered_ds = build_filtered_dataset(args.dataset_path, limit=args.limit)
     print(f"Contextos disponibles tras filtro {MIN_WORDS}-{MAX_WORDS} palabras: {len(filtered_ds)}")
