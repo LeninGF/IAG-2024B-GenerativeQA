@@ -1,0 +1,19 @@
+name: pyt-eqa-fge
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # outlines requires Python <3.14
+  - python=3.11
+  - pip
+  - pip:
+      # adjust cu124 to match the GPU driver's CUDA version (check `nvidia-smi`)
+      - --extra-index-url https://download.pytorch.org/whl/cu124
+      - torch
+      - transformers
+      - accelerate
+      - bitsandbytes
+      - datasets
+      - huggingface_hub
+      - pydantic
+      - outlines[transformers]==1.3.3
