@@ -1,0 +1,176 @@
+"""Local-GPU utilities for building the SQuAD-style robbery QA dataset.
+
+Reuses the prompt/schema design from dataset_build.ipynb, but runs inference
+locally via transformers + bitsandbytes (4-bit) instead of the Hugging Face
+Inference API, and uses `outlines` for schema-constrained JSON generation
+instead of manual `json.loads` parsing (see dataset_xplore_and_upload.ipynb
+for the hallucination/JSONDecodeError issues this avoids).
+
+This module is shared by dataset_build_local_gpu.ipynb (pilot/model
+comparison) and scripts/build_dataset_local_gpu.py (full-scale run).
+"""
+import json
+import time
+from functools import wraps
+
+import outlines
+import torch
+from pydantic import BaseModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+# Same 5 questions used in dataset_build.ipynb, kept unchanged for comparability.
+PREGUNTAS_COMUNES = [
+    "¿Qué objetos fueron robados?",
+    "¿En qué fecha ocurrió el incidente?",
+    "¿A qué hora sucedió el robo?",
+    "¿En qué dirección o entre qué calles sucedió el robo, suceso o incidente?",
+    "¿Qué valor en dólares tenían los objetos sustraídos o robados?",
+]
+
+
+class AnswerSchema(BaseModel):
+    answer_text: str
+    is_impossible: str
+
+
+def find_start_end_answer(context, answer):
+    """Locate `answer` inside `context`; flags cases where it cannot be found."""
+    impossible_flag = False
+    start = context.find(answer)
+    if start != -1:
+        end = start + len(answer)
+    else:
+        start = 0
+        end = 0
+        impossible_flag = True
+    return start, end, impossible_flag
+
+
+def safe_json_loads(response_str):
+    """Fallback parser, used only if constrained generation is bypassed."""
+    try:
+        return json.loads(response_str)
+    except json.JSONDecodeError as e:
+        print(f"JSONDecodeError: {e}")
+        print("Response string:", response_str)
+        return {"answer_text": "", "is_impossible": "imposible"}
+
+
+def load_local_model(model_name, device="cuda:0", quantize_4bit=True):
+    """Load an instruct model 4-bit quantized on a specific GPU, wrapped by outlines for JSON-constrained generation."""
+    model_kwargs = {"device_map": {"": device}}
+    if quantize_4bit:
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+        )
+    hf_model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    return outlines.from_transformers(hf_model, tokenizer)
+
+
+def build_prompt(context, question):
+    """Same prompt template used in dataset_build.ipynb's generate_squad_entry."""
+    return f"""
+    Eres un científico de datos que construye un dataset estilo SQuAD en español.
+    Tu tarea es extraer del siguiente contexto la respuesta exacta para la pregunta.
+
+    - Contexto: {context}
+
+    - Pregunta: {question}
+
+    ### Instrucciones:
+    1. Responde SOLO con el fragmento exacto del contexto que corresponde a la pregunta.
+    2. Si la pregunta no puede responderse con el contexto, escribe 'imposible' en el campo 'is_impossible'. Caso contrario coloca 'respondido'
+    """
+
+
+def generate_squad_entry_local(context, questions, model, context_id=None):
+    """Local-GPU equivalent of generate_squad_entry from dataset_build.ipynb, using outlines for guaranteed-valid JSON."""
+    answer_list = []
+    for question in questions:
+        prompt = build_prompt(context, question)
+        result = model(prompt, AnswerSchema)
+        response_json = AnswerSchema.model_validate_json(result).model_dump()
+        start_position, end_position, impossible_flag = find_start_end_answer(
+            context=context, answer=response_json["answer_text"]
+        )
+        dataset_details = {
+            "context": context,
+            "question": question,
+            "answer_start": start_position,
+            "answer_end": end_position,
+            "impossible_find_answer": impossible_flag,
+        }
+        response_full = {**dataset_details, **response_json}
+        if context_id is not None:
+            response_full["context_id"] = context_id
+        answer_list.append(response_full)
+    return answer_list
+
+
+def retry(max_retries=3, delay=5):
+    """Retry decorator for local generation (no API rate limit, only transient GPU/parse errors)."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempts += 1
+                    if attempts >= max_retries:
+                        raise Exception(f"Fallo después de {max_retries} reintentos") from e
+                    print(f"Error ({e}), reintentando ({attempts}/{max_retries})...")
+                    time.sleep(delay * attempts)
+        return wrapper
+    return decorator
+
+
+@retry(max_retries=2, delay=10)
+def process_single_context_local(context, questions, model, context_id=None):
+    return generate_squad_entry_local(context, questions, model, context_id=context_id)
+
+
+def process_full_dataset_local(
+    dataset,
+    output_file,
+    model,
+    questions=None,
+    checkpoint_interval=100,
+    id_prefix="context",
+    context_id_fn=None,
+):
+    """Process every context in `dataset` and append the generated QA entries to `output_file`.
+
+    `context_id_fn(idx)` maps a row index in `dataset` to a global context_id.
+    Required when `dataset` is a re-indexed subset (e.g. `Dataset.select(...)`)
+    so ids stay aligned with the original filtered_ds.
+    Defaults to `f"{id_prefix}_{idx}"` (matches the original notebook).
+    """
+    questions = questions if questions is not None else PREGUNTAS_COMUNES
+    context_id_fn = context_id_fn or (lambda idx: f"{id_prefix}_{idx}")
+
+    with open(output_file, "a", encoding="utf-8") as f:
+        for idx in range(len(dataset)):
+            context_id = context_id_fn(idx)
+
+            try:
+                context = dataset[idx]["relato"]
+                results = process_single_context_local(context, questions, model, context_id=context_id)
+
+                for res in results:
+                    f.write(json.dumps(res, ensure_ascii=False) + "\n")
+
+                if idx % checkpoint_interval == 0:
+                    f.flush()
+                    print(f"Checkpoint guardado en contexto {idx}")
+
+            except Exception as e:
+                print(f"Error crítico en contexto {idx}: {str(e)}")
+                with open("errores_v2.log", "a", encoding="utf-8") as err_log:
+                    err_log.write(f"{context_id}\t{str(e)}\n")
+
+    print("Procesamiento completo!")
