@@ -1,0 +1,28 @@
+{
+    "name": "IAG-2024B GenerativeQA (Ubuntu 24.04 / CUDA 11.8)",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all"
+    ],
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "workspaceFolder": "/workspace",
+    "remoteUser": "vscode",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/opt/conda/envs/pyt-eqa-fge/bin/python",
+                "python.terminal.activateEnvironment": true,
+                "python-envs.defaultEnvManager": "ms-python.python:conda",
+                "python-envs.defaultPackageManager": "ms-python.python:conda"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    }
+}
