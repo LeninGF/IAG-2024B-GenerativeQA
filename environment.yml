@@ -6,6 +6,7 @@ dependencies:
   # outlines requires Python <3.14
   - python=3.11
   - pip
+  - ipykernel
   - pip:
       # adjust cu124 to match the GPU driver's CUDA version (check `nvidia-smi`)
       - --extra-index-url https://download.pytorch.org/whl/cu124
