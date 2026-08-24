@@ -6,6 +6,7 @@ dependencies:
   # outlines requires Python <3.14
   - python=3.11
   - pip
+  - ipykernel
   - pip:
       # CUDA 11.8 for compatibility with older host GPU drivers (e.g. Ubuntu 18.04).
       # torch is pinned to 2.6.0+cu118 because it is the newest cu118 wheel for Python 3.11.
