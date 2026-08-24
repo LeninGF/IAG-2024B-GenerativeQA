@@ -42,7 +42,7 @@ RUN if "${CONDA_DIR}/bin/conda" tos --help >/dev/null 2>&1; then \
 # ---------------------------------------------------------------------------
 # Bake the conda environment into the image
 # ---------------------------------------------------------------------------
-COPY environment.cuda118.yml /tmp/environment.cuda118.yml
+COPY .devcontainer/environment.cuda118.yml /tmp/environment.cuda118.yml
 RUN "${CONDA_DIR}/bin/conda" env create -f /tmp/environment.cuda118.yml \
     && "${CONDA_DIR}/bin/conda" clean -afy \
     && rm -f /tmp/environment.cuda118.yml
