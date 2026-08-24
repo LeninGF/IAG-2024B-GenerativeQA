@@ -10,6 +10,7 @@ This module is shared by dataset_build_local_gpu.ipynb (pilot/model
 comparison) and scripts/build_dataset_local_gpu.py (full-scale run).
 """
 import json
+import os
 import time
 from functools import wraps
 
@@ -56,8 +57,20 @@ def safe_json_loads(response_str):
         return {"answer_text": "", "is_impossible": "imposible"}
 
 
+def get_available_devices():
+    """List CUDA devices (e.g. ["cuda:0", "cuda:1"]); GPU is required, this never falls back to CPU."""
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "No CUDA GPU detected. Local inference for this project is designed "
+            "for GPU (4-bit quantization + transformers); running on CPU is not "
+            "supported. Please run on a CUDA-enabled machine."
+        )
+    return [f"cuda:{i}" for i in range(torch.cuda.device_count())]
+
+
 def load_local_model(model_name, device="cuda:0", quantize_4bit=True):
     """Load an instruct model 4-bit quantized on a specific GPU, wrapped by outlines for JSON-constrained generation."""
+    print(f"Loading {model_name} on {device} ...")
     model_kwargs = {"device_map": {"": device}}
     if quantize_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
@@ -152,6 +165,10 @@ def process_full_dataset_local(
     """
     questions = questions if questions is not None else PREGUNTAS_COMUNES
     context_id_fn = context_id_fn or (lambda idx: f"{id_prefix}_{idx}")
+
+    output_dir = os.path.dirname(output_file)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(output_file, "a", encoding="utf-8") as f:
         for idx in range(len(dataset)):
