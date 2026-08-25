@@ -17,7 +17,47 @@ from functools import wraps
 import outlines
 import torch
 from pydantic import BaseModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import (
+    AutoModelForCausalLM,
+    AutoProcessor,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    Gemma3ForConditionalGeneration,
+)
+
+# Model configs verified in testing-pyt-ml-eqa-fge-*.ipynb: 1-GPU models use
+# AutoModelForCausalLM/AutoTokenizer; gemma-3-4b-it is multimodal-capable and
+# requires Gemma3ForConditionalGeneration/AutoProcessor instead.
+MODEL_REGISTRY = {
+    "qwen2.5-3b-instruct": {
+        "hf_name": "Qwen/Qwen2.5-3B-Instruct",
+        "model_class": AutoModelForCausalLM,
+        "processor_class": AutoTokenizer,
+        "torch_dtype": torch.float16,
+        "num_gpus": 1,
+    },
+    "qwen2.5-7b-instruct": {
+        "hf_name": "Qwen/Qwen2.5-7B-Instruct",
+        "model_class": AutoModelForCausalLM,
+        "processor_class": AutoTokenizer,
+        "torch_dtype": torch.float16,
+        "num_gpus": 2,
+    },
+    "gemma-3-1b-it": {
+        "hf_name": "google/gemma-3-1b-it",
+        "model_class": AutoModelForCausalLM,
+        "processor_class": AutoTokenizer,
+        "torch_dtype": torch.float16,
+        "num_gpus": 1,
+    },
+    "gemma-3-4b-it": {
+        "hf_name": "google/gemma-3-4b-it",
+        "model_class": Gemma3ForConditionalGeneration,
+        "processor_class": AutoProcessor,
+        "torch_dtype": torch.bfloat16,
+        "num_gpus": 2,
+    },
+}
 
 # Same 5 questions used in dataset_build.ipynb, kept unchanged for comparability.
 PREGUNTAS_COMUNES = [
@@ -68,19 +108,54 @@ def get_available_devices():
     return [f"cuda:{i}" for i in range(torch.cuda.device_count())]
 
 
-def load_local_model(model_name, device="cuda:0", quantize_4bit=True):
-    """Load an instruct model 4-bit quantized on a specific GPU, wrapped by outlines for JSON-constrained generation."""
-    print(f"Loading {model_name} on {device} ...")
-    model_kwargs = {"device_map": {"": device}}
+def gpu_memory(device_id):
+    """Print allocated/reserved/total VRAM for a logical GPU index; shared by the notebook and benchmark script."""
+    allocated = torch.cuda.memory_allocated(device_id) / 1024**3
+    reserved = torch.cuda.memory_reserved(device_id) / 1024**3
+    total = torch.cuda.get_device_properties(device_id).total_memory / 1024**3
+    print(
+        f"cuda:{device_id} | "
+        f"allocated: {allocated:.2f} GiB | "
+        f"reserved: {reserved:.2f} GiB | "
+        f"total: {total:.2f} GiB"
+    )
+
+
+def load_local_model(model_key, gpu_ids, quantize_4bit=True, max_memory_gib=12):
+    """Load a registered model onto the given logical GPU ids, wrapped by outlines for JSON-constrained generation.
+
+    `gpu_ids` are logical indices (0-based) assumed already remapped by the
+    caller via `CUDA_VISIBLE_DEVICES`, set *before* this module was imported
+    (torch is imported at module load time, so setting the env var here would
+    be too late). Single-GPU models take one id; 2-GPU models use
+    `device_map="balanced"` across both ids given.
+    """
+    if model_key not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model_key '{model_key}'. Choices: {list(MODEL_REGISTRY)}")
+    entry = MODEL_REGISTRY[model_key]
+    if len(gpu_ids) != entry["num_gpus"]:
+        raise ValueError(
+            f"'{model_key}' requires {entry['num_gpus']} gpu id(s), got {gpu_ids}"
+        )
+
+    model_kwargs = {"torch_dtype": entry["torch_dtype"], "low_cpu_mem_usage": True}
+    if entry["num_gpus"] == 1:
+        model_kwargs["device_map"] = {"": gpu_ids[0]}
+    else:
+        model_kwargs["device_map"] = "balanced"
+        model_kwargs["max_memory"] = {gid: f"{max_memory_gib}GiB" for gid in gpu_ids}
+        model_kwargs["max_memory"]["cpu"] = "100GiB"
     if quantize_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=entry["torch_dtype"],
         )
-    hf_model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    return outlines.from_transformers(hf_model, tokenizer)
+
+    print(f"Loading {entry['hf_name']} on logical gpu ids {gpu_ids} ...")
+    hf_model = entry["model_class"].from_pretrained(entry["hf_name"], **model_kwargs)
+    processor = entry["processor_class"].from_pretrained(entry["hf_name"])
+    return outlines.from_transformers(hf_model, processor)
 
 
 def build_prompt(context, question):
