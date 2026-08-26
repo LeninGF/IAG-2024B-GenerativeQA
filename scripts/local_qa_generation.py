@@ -176,33 +176,23 @@ def load_local_model(model_key, gpu_ids, quantize_4bit=True, max_memory_gib=12):
 
 
 # System role + rules shared by both model families (build_prompt for Qwen,
-# generate_gemma_answer for Gemma's system/user chat-template roles). Grounding
-# criteria per question type were added after observing hallucinations where a
-# model copied a keyword-adjacent phrase (e.g. "la dirección antes mencionada")
-# instead of an actual address (see testing-eqa-local.ipynb debug runs).
-SYSTEM_PROMPT_QA = """Eres un científico de datos que construye un dataset estilo SQuAD en español a partir de relatos policiales de robos.
-Tu tarea es extraer del contexto la respuesta EXACTA (copiada literalmente, sin parafrasear) para la pregunta dada.
-Responde con JSON válido y sin texto extra ni markdown.
+# generate_gemma_answer for Gemma's system/user chat-template roles). Kept short
+# and free of quoted counterexamples: an earlier version listed the exact
+# hallucinated phrase ("la dirección antes mencionada") as a "don't answer this"
+# example, and both models echoed it back verbatim as the answer (see
+# testing-eqa-local.ipynb debug runs) — quoting bad text as a negative example
+# backfires on small/quantized instruct models.
+SYSTEM_PROMPT_QA = """Eres un asistente que extrae respuestas literales de un texto para construir un dataset tipo SQuAD en español.
+Dado un contexto y una pregunta, responde SOLO con JSON válido, sin markdown ni texto adicional.
 
-Antes de responder, verifica que el contexto mencione EXPLÍCITAMENTE la información pedida:
-- Objetos robados: nombres concretos de bienes u objetos (ej. 'camioneta', 'arma de fuego', 'laptop').
-- Fecha: cualquier mención temporal del día del incidente, sea exacta ('22 de octubre del 2014') o
-  aproximada ('ese fin de semana', 'hace tres días'), siempre que aparezca literalmente en el contexto.
-- Hora: cualquier mención de la hora del incidente, sea exacta ('20h40', 'a las 8 de la noche') o
-  aproximada ('en la noche', 'en la madrugada', 'en las primeras horas del día'), siempre que aparezca
-  literalmente en el contexto.
-- Dirección o calles: un nombre de calle, avenida, sector, barrio o referencia geográfica CONCRETA.
-  Frases como 'la dirección antes mencionada' o 'en el lugar de los hechos' NO son respuestas válidas,
-  aunque contengan la palabra 'dirección'.
-- Valor en dólares: una cifra monetaria explícita (ej. '$500', '300 dólares'), nunca inventada.
+- Si el contexto contiene información concreta y específica que responde la pregunta (un objeto, una fecha,
+  una hora, un lugar o un valor mencionados explícitamente), cópiala tal cual aparece en el texto:
+  {"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}
+- Si el contexto no menciona esa información de forma concreta, no inventes ni infieras. Usa:
+  {"answer_text": "", "is_impossible": "imposible"}
 
-Reglas:
-1. Si el contexto menciona explícitamente la información pedida, devuelve:
-   {"answer_text": "texto exacto copiado del contexto", "is_impossible": "respondido"}
-2. Si el contexto NO la menciona explícitamente (aunque suene relacionado o se pueda inferir), devuelve:
-   {"answer_text": "", "is_impossible": "imposible"}
-3. Nunca copies una frase que solo repita la palabra clave de la pregunta sin aportar la información real pedida.
-4. No añadas markdown, no añadas explicación adicional."""
+La respuesta debe ser un dato específico y verificable, no una referencia genérica al lugar, momento o
+hecho sin datos concretos (por ejemplo, mencionar solo la palabra clave de la pregunta no cuenta como respuesta)."""
 
 
 def build_prompt(context, question):
