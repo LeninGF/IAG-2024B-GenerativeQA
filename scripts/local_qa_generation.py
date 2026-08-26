@@ -77,15 +77,14 @@ class AnswerSchema(BaseModel):
 
 def find_start_end_answer(context, answer):
     """Locate `answer` inside `context`; flags cases where it cannot be found."""
-    impossible_flag = False
+    # str.find("") always returns 0, so an empty/blank answer must be checked
+    # explicitly instead of falling through to context.find().
+    if not answer or not answer.strip():
+        return 0, 0, True
     start = context.find(answer)
     if start != -1:
-        end = start + len(answer)
-    else:
-        start = 0
-        end = 0
-        impossible_flag = True
-    return start, end, impossible_flag
+        return start, start + len(answer), False
+    return 0, 0, True
 
 
 def safe_json_loads(response_str):
@@ -177,17 +176,33 @@ def load_local_model(model_key, gpu_ids, quantize_4bit=True, max_memory_gib=12):
 
 
 # System role + rules shared by both model families (build_prompt for Qwen,
-# generate_gemma_answer for Gemma's system/user chat-template roles).
-SYSTEM_PROMPT_QA = """Eres un científico de datos que construye un dataset estilo SQuAD en español.
-Tu tarea es extraer del siguiente contexto la respuesta exacta para la pregunta.
-Responde con JSON válido y sin texto extra.
+# generate_gemma_answer for Gemma's system/user chat-template roles). Grounding
+# criteria per question type were added after observing hallucinations where a
+# model copied a keyword-adjacent phrase (e.g. "la dirección antes mencionada")
+# instead of an actual address (see testing-eqa-local.ipynb debug runs).
+SYSTEM_PROMPT_QA = """Eres un científico de datos que construye un dataset estilo SQuAD en español a partir de relatos policiales de robos.
+Tu tarea es extraer del contexto la respuesta EXACTA (copiada literalmente, sin parafrasear) para la pregunta dada.
+Responde con JSON válido y sin texto extra ni markdown.
+
+Antes de responder, verifica que el contexto mencione EXPLÍCITAMENTE la información pedida:
+- Objetos robados: nombres concretos de bienes u objetos (ej. 'camioneta', 'arma de fuego', 'laptop').
+- Fecha: cualquier mención temporal del día del incidente, sea exacta ('22 de octubre del 2014') o
+  aproximada ('ese fin de semana', 'hace tres días'), siempre que aparezca literalmente en el contexto.
+- Hora: cualquier mención de la hora del incidente, sea exacta ('20h40', 'a las 8 de la noche') o
+  aproximada ('en la noche', 'en la madrugada', 'en las primeras horas del día'), siempre que aparezca
+  literalmente en el contexto.
+- Dirección o calles: un nombre de calle, avenida, sector, barrio o referencia geográfica CONCRETA.
+  Frases como 'la dirección antes mencionada' o 'en el lugar de los hechos' NO son respuestas válidas,
+  aunque contengan la palabra 'dirección'.
+- Valor en dólares: una cifra monetaria explícita (ej. '$500', '300 dólares'), nunca inventada.
 
 Reglas:
-1. Devuelve exactamente este esquema:
-   {"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}
-2. Si no se puede responder, usa:
+1. Si el contexto menciona explícitamente la información pedida, devuelve:
+   {"answer_text": "texto exacto copiado del contexto", "is_impossible": "respondido"}
+2. Si el contexto NO la menciona explícitamente (aunque suene relacionado o se pueda inferir), devuelve:
    {"answer_text": "", "is_impossible": "imposible"}
-3. No añadas markdown, no añadas explicación."""
+3. Nunca copies una frase que solo repita la palabra clave de la pregunta sin aportar la información real pedida.
+4. No añadas markdown, no añadas explicación adicional."""
 
 
 def build_prompt(context, question):
