@@ -158,23 +158,27 @@ def load_local_model(model_key, gpu_ids, quantize_4bit=True, max_memory_gib=12):
     return outlines.from_transformers(hf_model, processor)
 
 
+# System role + rules shared by both model families (build_prompt for Qwen,
+# generate_gemma_answer for Gemma's system/user chat-template roles).
+SYSTEM_PROMPT_QA = """Eres un científico de datos que construye un dataset estilo SQuAD en español.
+Tu tarea es extraer del siguiente contexto la respuesta exacta para la pregunta.
+Responde con JSON válido y sin texto extra.
+
+Reglas:
+1. Devuelve exactamente este esquema:
+   {"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}
+2. Si no se puede responder, usa:
+   {"answer_text": "", "is_impossible": "imposible"}
+3. No añadas markdown, no añadas explicación."""
+
+
 def build_prompt(context, question):
     """Same prompt template used in dataset_build.ipynb's generate_squad_entry."""
-    return f"""
-    Eres un científico de datos que construye un dataset estilo SQuAD en español.
-    Tu tarea es extraer del siguiente contexto la respuesta exacta para la pregunta. 
-    Responde con JSON válido y sin texto extra.
+    return f"""{SYSTEM_PROMPT_QA}
 
     - Contexto: {context}
 
     - Pregunta: {question}
-
-    Reglas:
-    1. Devuelve exactamente este esquema:
-       {{"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}}
-    2. Si no se puede responder, usa:
-       {{"answer_text": "", "is_impossible": "imposible"}}
-    3. No añadas markdown, no añadas explicación.
     """
 
 
@@ -186,15 +190,32 @@ def generate_qwen_answer(context, question, model):
     return response_json
 
 
-def generate_gemma_answer(context, question, model, tokenizer):
+def get_tokenizer_for_model(model_name):
+    """Return the tokenizer for a registered model using the canonical HF repo id."""
+    if model_name is None:
+        raise ValueError("model_name is required to resolve the tokenizer")
+    if model_name not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model_name '{model_name}'. Choices: {list(MODEL_REGISTRY)}")
+    repo_id = MODEL_REGISTRY[model_name]["hf_name"]
+    return AutoTokenizer.from_pretrained(repo_id)
+
+
+def generate_gemma_answer(context, question, model, model_name=None, tokenizer=None):
     """Gemma path: use the documented chat-template + model.generate contract instead of outlines."""
+    if tokenizer is None:
+        tokenizer = get_tokenizer_for_model(model_name)
+
     messages = [
+        {
+            "role": "system",
+            "content": [{"type": "text", "text": SYSTEM_PROMPT_QA}],
+        },
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": f"Contexto: {context}\nPregunta: {question}\nResponde SOLO con JSON válido. Usa este formato: {{\"answer_text\": \"...\", \"is_impossible\": \"respondido\"}}. Si no se puede responder, usa {{\"answer_text\": \"\", \"is_impossible\": \"imposible\"}}."}
+                {"type": "text", "text": f"Contexto: {context}\nPregunta: {question}"}
             ],
-        }
+        },
     ]
     text = tokenizer.apply_chat_template(
         messages,
@@ -226,8 +247,8 @@ def generate_squad_entry_local(context, questions, model, context_id=None, model
     for question in questions:
         if model_name is not None and "gemma" in model_name.lower():
             if tokenizer is None:
-                raise ValueError("tokenizer is required for Gemma generation")
-            response_json = generate_gemma_answer(context, question, model, tokenizer)
+                tokenizer = get_tokenizer_for_model(model_name)
+            response_json = generate_gemma_answer(context, question, model, model_name=model_name, tokenizer=tokenizer)
         else:
             response_json = generate_qwen_answer(context, question, model)
 
