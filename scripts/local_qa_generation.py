@@ -11,6 +11,7 @@ comparison) and scripts/build_dataset_local_gpu.py (full-scale run).
 """
 import json
 import os
+import re
 import time
 from functools import wraps
 
@@ -94,6 +95,23 @@ def safe_json_loads(response_str):
     except json.JSONDecodeError as e:
         print(f"JSONDecodeError: {e}")
         print("Response string:", response_str)
+        return {"answer_text": "", "is_impossible": "imposible"}
+
+
+def parse_json_answer(response_str):
+    """Parse a model's JSON answer, tolerating ```json ... ``` fences Gemma sometimes adds despite the prompt rule against markdown."""
+    stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", response_str.strip())
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        print("JSON INVALIDO, usando fallback.")
+        print("RAW COMPLETO:", response_str)
         return {"answer_text": "", "is_impossible": "imposible"}
 
 
@@ -236,12 +254,7 @@ def generate_gemma_answer(context, question, model, model_name=None, tokenizer=N
         skip_special_tokens=True,
     )
 
-    try:
-        return json.loads(generated_text)
-    except Exception:
-        print("JSON INVALIDO (Gemma), usando fallback.")
-        print("RAW COMPLETO:", generated_text)
-        return {"answer_text": "", "is_impossible": "imposible"}
+    return parse_json_answer(generated_text)
 
 
 def generate_squad_entry_local(context, questions, model, context_id=None, model_name=None, tokenizer=None):
