@@ -178,14 +178,19 @@ def build_prompt(context, question):
     """
 
 
-def generate_squad_entry_local(context, questions, model, context_id=None):
+def generate_squad_entry_local(context, questions, model, context_id=None, model_name=None):
+    """Local-GPU equivalent of generate_squad_entry from dataset_build.ipynb.
+
+    `context_id` is metadata to track the original row in the filtered dataset.
+    The generation itself remains model-agnostic; we keep a safe fallback for
+    models that fail during structured generation.
+    """
     answer_list = []
     for question in questions:
         prompt = build_prompt(context, question)
 
         try:
             raw = model(prompt, AnswerSchema, max_new_tokens=64, do_sample=False)
-            print("RAW:", raw)
         except Exception as e:
             print("ERROR EN GENERACION:", repr(e))
             raw = '{"answer_text": "", "is_impossible": "imposible"}'
@@ -238,8 +243,14 @@ def retry(max_retries=3, delay=5):
 
 
 @retry(max_retries=2, delay=10)
-def process_single_context_local(context, questions, model, context_id=None):
-    return generate_squad_entry_local(context, questions, model, context_id=context_id)
+def process_single_context_local(context, questions, model, context_id=None, model_name=None):
+    return generate_squad_entry_local(
+        context,
+        questions,
+        model,
+        context_id=context_id,
+        model_name=model_name,
+    )
 
 
 def process_full_dataset_local(
@@ -250,6 +261,7 @@ def process_full_dataset_local(
     checkpoint_interval=100,
     id_prefix="context",
     context_id_fn=None,
+    model_name=None,
 ):
     """Process every context in `dataset` and append the generated QA entries to `output_file`.
 
@@ -271,7 +283,13 @@ def process_full_dataset_local(
 
             try:
                 context = dataset[idx]["relato"]
-                results = process_single_context_local(context, questions, model, context_id=context_id)
+                results = process_single_context_local(
+                    context,
+                    questions,
+                    model,
+                    context_id=context_id,
+                    model_name=model_name,
+                )
 
                 for res in results:
                     f.write(json.dumps(res, ensure_ascii=False) + "\n")
