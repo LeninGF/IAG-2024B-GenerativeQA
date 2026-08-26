@@ -178,32 +178,61 @@ def build_prompt(context, question):
     """
 
 
-def generate_squad_entry_local(context, questions, model, context_id=None, model_name=None):
-    """Local-GPU equivalent of generate_squad_entry from dataset_build.ipynb.
+def generate_qwen_answer(context, question, model):
+    """Qwen path: stable with outlines + structured JSON generation."""
+    prompt = build_prompt(context, question)
+    raw = model(prompt, AnswerSchema, max_new_tokens=64, do_sample=False)
+    response_json = AnswerSchema.model_validate_json(raw).model_dump()
+    return response_json
 
-    `context_id` is metadata to track the original row in the filtered dataset.
-    The generation itself remains model-agnostic; we keep a safe fallback for
-    models that fail during structured generation.
-    """
+
+def generate_gemma_answer(context, question, model, tokenizer):
+    """Gemma path: use the documented chat-template + model.generate contract instead of outlines."""
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": f"Contexto: {context}\nPregunta: {question}\nResponde SOLO con JSON válido. Usa este formato: {{\"answer_text\": \"...\", \"is_impossible\": \"respondido\"}}. Si no se puede responder, usa {{\"answer_text\": \"\", \"is_impossible\": \"imposible\"}}."}
+            ],
+        }
+    ]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    generated_ids = model.generate(
+        **inputs,
+        max_new_tokens=64,
+        do_sample=False,
+    )
+    generated_text = tokenizer.decode(
+        generated_ids[0][inputs["input_ids"].shape[-1]:],
+        skip_special_tokens=True,
+    )
+
+    try:
+        return json.loads(generated_text)
+    except Exception:
+        print("JSON INVALIDO (Gemma), usando fallback.")
+        print("RAW COMPLETO:", generated_text)
+        return {"answer_text": "", "is_impossible": "imposible"}
+
+
+def generate_squad_entry_local(context, questions, model, context_id=None, model_name=None, tokenizer=None):
+    """Dispatcher by model family. Qwen uses outlines; Gemma uses the native chat-template path."""
     answer_list = []
     for question in questions:
-        prompt = build_prompt(context, question)
-
-        try:
-            raw = model(prompt, AnswerSchema, max_new_tokens=64, do_sample=False)
-        except Exception as e:
-            print("ERROR EN GENERACION:", repr(e))
-            raw = '{"answer_text": "", "is_impossible": "imposible"}'
-
-        try:
-            response_json = AnswerSchema.model_validate_json(raw).model_dump()
-        except Exception:
-            print("JSON INVALIDO, usando fallback.")
-            print("RAW COMPLETO:", raw)
-            response_json = {"answer_text": "", "is_impossible": "imposible"}
+        if model_name is not None and "gemma" in model_name.lower():
+            if tokenizer is None:
+                raise ValueError("tokenizer is required for Gemma generation")
+            response_json = generate_gemma_answer(context, question, model, tokenizer)
+        else:
+            response_json = generate_qwen_answer(context, question, model)
 
         start_position, end_position, impossible_flag = find_start_end_answer(
-            context=context, answer=response_json["answer_text"]
+            context=context, answer=response_json.get("answer_text", "")
         )
 
         dataset_details = {
@@ -243,13 +272,14 @@ def retry(max_retries=3, delay=5):
 
 
 @retry(max_retries=2, delay=10)
-def process_single_context_local(context, questions, model, context_id=None, model_name=None):
+def process_single_context_local(context, questions, model, context_id=None, model_name=None, tokenizer=None):
     return generate_squad_entry_local(
         context,
         questions,
         model,
         context_id=context_id,
         model_name=model_name,
+        tokenizer=tokenizer,
     )
 
 
@@ -262,6 +292,7 @@ def process_full_dataset_local(
     id_prefix="context",
     context_id_fn=None,
     model_name=None,
+    tokenizer=None,
 ):
     """Process every context in `dataset` and append the generated QA entries to `output_file`.
 
@@ -289,6 +320,7 @@ def process_full_dataset_local(
                     model,
                     context_id=context_id,
                     model_name=model_name,
+                    tokenizer=tokenizer,
                 )
 
                 for res in results:
