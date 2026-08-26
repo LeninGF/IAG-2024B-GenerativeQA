@@ -184,7 +184,7 @@ def generate_squad_entry_local(context, questions, model, context_id=None):
         prompt = build_prompt(context, question)
 
         try:
-            raw = model(prompt, AnswerSchema, max_new_tokens=64, temperature=0.0)
+            raw = model(prompt, AnswerSchema, max_new_tokens=64, do_sample=False)
             print("RAW:", raw)
         except Exception as e:
             print("ERROR EN GENERACION:", repr(e))
