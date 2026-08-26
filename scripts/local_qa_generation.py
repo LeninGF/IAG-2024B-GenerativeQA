@@ -397,7 +397,13 @@ def process_full_dataset_local(
     Defaults to `f"{id_prefix}_{idx}"` (matches the original notebook).
     """
     questions = questions if questions is not None else PREGUNTAS_COMUNES
-    context_id_fn = context_id_fn or (lambda idx: f"{id_prefix}_{idx}")
+    if callable(context_id_fn):
+        get_context_id = context_id_fn
+    elif isinstance(context_id_fn, str):
+        prefix = context_id_fn
+        get_context_id = lambda idx: f"{prefix}_{idx}"
+    else:
+        get_context_id = lambda idx: f"{id_prefix}_{idx}"
 
     output_dir = os.path.dirname(output_file)
     if output_dir:
@@ -405,7 +411,7 @@ def process_full_dataset_local(
 
     with open(output_file, "a", encoding="utf-8") as f:
         for idx in range(len(dataset)):
-            context_id = context_id_fn(idx)
+            context_id = get_context_id(idx)
 
             try:
                 context = dataset[idx]["relato"]
