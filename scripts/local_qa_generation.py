@@ -13,6 +13,7 @@ import json
 import os
 import re
 import time
+from difflib import SequenceMatcher
 from functools import wraps
 
 import outlines
@@ -296,6 +297,54 @@ def generate_squad_entry_local(context, questions, model, context_id=None, model
         answer_list.append(response_full)
 
     return answer_list
+
+
+def _answer_similarity(text_a, text_b):
+    """Character-level similarity ratio between two answer strings (1.0 = identical, 0.0 = no overlap)."""
+    if not text_a and not text_b:
+        return 1.0
+    return SequenceMatcher(None, text_a, text_b).ratio()
+
+
+def compare_model_answers(entries_a, entries_b, similarity_threshold=0.7):
+    """Flag agreement between two models' answers for the same context/questions.
+
+    `entries_a`/`entries_b` are the lists returned by `generate_squad_entry_local`
+    for the same `context` and `questions`, one per model (e.g. Qwen vs Gemma in
+    `small_1gpu_pair` mode). Cheap, annotation-free proxy for dataset quality:
+    entries where both models agree are more likely to be correct; disagreements
+    are the ones worth a manual look, instead of reviewing everything.
+    """
+    if len(entries_a) != len(entries_b):
+        raise ValueError("entries_a and entries_b must have the same length (same questions)")
+
+    comparisons = []
+    for entry_a, entry_b in zip(entries_a, entries_b):
+        if entry_a["question"] != entry_b["question"]:
+            raise ValueError("entries_a and entries_b must be in the same question order")
+
+        impossible_a = entry_a["impossible_find_answer"]
+        impossible_b = entry_b["impossible_find_answer"]
+
+        if impossible_a and impossible_b:
+            agreement = "both_impossible"
+        elif impossible_a != impossible_b:
+            agreement = "disagree"
+        else:
+            similarity = _answer_similarity(entry_a["answer_text"], entry_b["answer_text"])
+            agreement = "agree" if similarity >= similarity_threshold else "disagree"
+
+        comparisons.append({
+            "context_id": entry_a.get("context_id"),
+            "question": entry_a["question"],
+            "answer_text_a": entry_a["answer_text"],
+            "answer_text_b": entry_b["answer_text"],
+            "impossible_a": impossible_a,
+            "impossible_b": impossible_b,
+            "agreement": agreement,
+        })
+
+    return comparisons
 
 
 def retry(max_retries=3, delay=5):
