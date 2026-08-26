@@ -162,28 +162,45 @@ def build_prompt(context, question):
     """Same prompt template used in dataset_build.ipynb's generate_squad_entry."""
     return f"""
     Eres un científico de datos que construye un dataset estilo SQuAD en español.
-    Tu tarea es extraer del siguiente contexto la respuesta exacta para la pregunta.
+    Tu tarea es extraer del siguiente contexto la respuesta exacta para la pregunta. 
+    Responde con JSON válido y sin texto extra.
 
     - Contexto: {context}
 
     - Pregunta: {question}
 
-    ### Instrucciones:
-    1. Responde SOLO con el fragmento exacto del contexto que corresponde a la pregunta.
-    2. Si la pregunta no puede responderse con el contexto, escribe 'imposible' en el campo 'is_impossible'. Caso contrario coloca 'respondido'
+    Reglas:
+    1. Devuelve exactamente este esquema:
+       {{"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}}
+    2. Si no se puede responder, usa:
+       {{"answer_text": "", "is_impossible": "imposible"}}
+    3. No añadas markdown, no añadas explicación.
     """
 
 
 def generate_squad_entry_local(context, questions, model, context_id=None):
-    """Local-GPU equivalent of generate_squad_entry from dataset_build.ipynb, using outlines for guaranteed-valid JSON."""
     answer_list = []
     for question in questions:
         prompt = build_prompt(context, question)
-        result = model(prompt, AnswerSchema)
-        response_json = AnswerSchema.model_validate_json(result).model_dump()
+
+        try:
+            raw = model(prompt, AnswerSchema, max_new_tokens=64, temperature=0.0)
+            print("RAW:", raw)
+        except Exception as e:
+            print("ERROR EN GENERACION:", repr(e))
+            raw = '{"answer_text": "", "is_impossible": "imposible"}'
+
+        try:
+            response_json = AnswerSchema.model_validate_json(raw).model_dump()
+        except Exception:
+            print("JSON INVALIDO, usando fallback.")
+            print("RAW COMPLETO:", raw)
+            response_json = {"answer_text": "", "is_impossible": "imposible"}
+
         start_position, end_position, impossible_flag = find_start_end_answer(
             context=context, answer=response_json["answer_text"]
         )
+
         dataset_details = {
             "context": context,
             "question": question,
@@ -191,10 +208,13 @@ def generate_squad_entry_local(context, questions, model, context_id=None):
             "answer_end": end_position,
             "impossible_find_answer": impossible_flag,
         }
+
         response_full = {**dataset_details, **response_json}
         if context_id is not None:
             response_full["context_id"] = context_id
+
         answer_list.append(response_full)
+
     return answer_list
 
 
