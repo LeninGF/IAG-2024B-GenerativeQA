@@ -272,6 +272,10 @@ def generate_squad_entry_local(context, questions, model, context_id=None, model
             context=context, answer=response_json.get("answer_text", "")
         )
 
+        # Trust the deterministic substring check over the LLM's own is_impossible label,
+        # which can contradict a correctly-filled answer_text.
+        response_json["is_impossible"] = "imposible" if impossible_flag else "respondido"
+
         dataset_details = {
             "context": context,
             "question": question,
