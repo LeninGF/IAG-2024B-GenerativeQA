@@ -222,8 +222,11 @@ def generate_gemma_answer(context, question, model, model_name=None, tokenizer=N
         tokenize=False,
         add_generation_prompt=True,
     )
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-    generated_ids = model.generate(
+    # `model` is the outlines-wrapped Transformers object; the raw HF model
+    # (with .device/.generate) lives at `model.model`.
+    hf_model = model.model
+    inputs = tokenizer(text, return_tensors="pt").to(hf_model.device)
+    generated_ids = hf_model.generate(
         **inputs,
         max_new_tokens=64,
         do_sample=False,
