@@ -85,7 +85,13 @@ def main():
     for idx in range(len(filtered_ds)):
         context = filtered_ds[idx]["relato"]
         start = time.perf_counter()
-        process_single_context_local(context, PREGUNTAS_COMUNES, model, context_id=f"bench_{idx}")
+        process_single_context_local(
+            context,
+            PREGUNTAS_COMUNES,
+            model,
+            context_id=f"bench_{idx}",
+            model_name=args.model,
+        )
         context_times.append(time.perf_counter() - start)
 
     avg_context_time_s = sum(context_times) / len(context_times)

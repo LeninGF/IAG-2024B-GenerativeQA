@@ -116,6 +116,7 @@ def main():
         model=model,
         questions=PREGUNTAS_COMUNES,
         checkpoint_interval=args.checkpoint_interval,
+        model_name=args.model,
     )
 
 
