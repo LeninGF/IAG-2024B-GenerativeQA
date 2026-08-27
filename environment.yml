@@ -19,3 +19,6 @@ dependencies:
       - pydantic
       - python-dotenv
       - outlines[transformers]==1.3.3
+      - tqdm
+      - matplotlib
+      - seaborn

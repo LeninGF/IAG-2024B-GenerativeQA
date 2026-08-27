@@ -19,6 +19,7 @@ from functools import wraps
 import outlines
 import torch
 from pydantic import BaseModel
+from tqdm.auto import tqdm
 from transformers import (
     AutoModelForCausalLM,
     AutoProcessor,
@@ -26,6 +27,11 @@ from transformers import (
     BitsAndBytesConfig,
     Gemma3ForConditionalGeneration,
 )
+
+# Fixed, distinctive placeholder for "no answer": UPPER_SNAKE_CASE virtually never
+# occurs verbatim in the lowercase/mixed-case narrative prose, unlike a natural
+# phrase (e.g. "no se especifica"), which could coincidentally match real context text.
+NO_ANSWER_SENTINEL = "RESPUESTA_NO_ENCONTRADA"
 
 # Model configs verified in testing-pyt-ml-eqa-fge-*.ipynb: 1-GPU models use
 # AutoModelForCausalLM/AutoTokenizer; gemma-3-4b-it is multimodal-capable and
@@ -95,7 +101,7 @@ def safe_json_loads(response_str):
     except json.JSONDecodeError as e:
         print(f"JSONDecodeError: {e}")
         print("Response string:", response_str)
-        return {"answer_text": "", "is_impossible": "imposible"}
+        return {"answer_text": NO_ANSWER_SENTINEL, "is_impossible": "imposible"}
 
 
 def parse_json_answer(response_str):
@@ -112,7 +118,7 @@ def parse_json_answer(response_str):
                 pass
         print("JSON INVALIDO, usando fallback.")
         print("RAW COMPLETO:", response_str)
-        return {"answer_text": "", "is_impossible": "imposible"}
+        return {"answer_text": NO_ANSWER_SENTINEL, "is_impossible": "imposible"}
 
 
 def get_available_devices():
@@ -183,14 +189,14 @@ def load_local_model(model_key, gpu_ids, quantize_4bit=True, max_memory_gib=12):
 # example, and both models echoed it back verbatim as the answer (see
 # testing-eqa-local.ipynb debug runs) — quoting bad text as a negative example
 # backfires on small/quantized instruct models.
-SYSTEM_PROMPT_QA = """Eres un asistente que extrae respuestas literales de un texto para construir un dataset tipo SQuAD en español.
+SYSTEM_PROMPT_QA = f"""Eres un asistente que extrae respuestas literales de un texto para construir un dataset tipo SQuAD en español.
 Dado un contexto y una pregunta, responde SOLO con JSON válido, sin markdown ni texto adicional.
 
 - Si el contexto contiene información concreta y específica que responde la pregunta (un objeto, una fecha,
   una hora, un lugar o un valor mencionados explícitamente), cópiala tal cual aparece en el texto:
-  {"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}
+  {{"answer_text": "texto exacto del contexto", "is_impossible": "respondido"}}
 - Si el contexto no menciona esa información de forma concreta, no inventes ni infieras. Usa:
-  {"answer_text": "", "is_impossible": "imposible"}
+  {{"answer_text": "{NO_ANSWER_SENTINEL}", "is_impossible": "imposible"}}
 
 La respuesta debe ser un dato específico y verificable, no una referencia genérica al lugar, momento o
 hecho sin datos concretos (por ejemplo, mencionar solo la palabra clave de la pregunta no cuenta como respuesta)."""
@@ -209,7 +215,7 @@ def build_prompt(context, question):
 def generate_qwen_answer(context, question, model):
     """Qwen path: stable with outlines + structured JSON generation."""
     prompt = build_prompt(context, question)
-    raw = model(prompt, AnswerSchema, max_new_tokens=64, do_sample=False)
+    raw = model(prompt, AnswerSchema, max_new_tokens=128, do_sample=False)
     response_json = AnswerSchema.model_validate_json(raw).model_dump()
     return response_json
 
@@ -252,7 +258,7 @@ def generate_gemma_answer(context, question, model, model_name=None, tokenizer=N
     inputs = tokenizer(text, return_tensors="pt").to(hf_model.device)
     generated_ids = hf_model.generate(
         **inputs,
-        max_new_tokens=64,
+        max_new_tokens=128,
         do_sample=False,
     )
     generated_text = tokenizer.decode(
@@ -410,7 +416,7 @@ def process_full_dataset_local(
         os.makedirs(output_dir, exist_ok=True)
 
     with open(output_file, "a", encoding="utf-8") as f:
-        for idx in range(len(dataset)):
+        for idx in tqdm(range(len(dataset)), desc=f"{model_name or id_prefix}"):
             context_id = get_context_id(idx)
 
             try:
@@ -429,10 +435,10 @@ def process_full_dataset_local(
 
                 if idx % checkpoint_interval == 0:
                     f.flush()
-                    print(f"Checkpoint guardado en contexto {idx}")
+                    tqdm.write(f"Checkpoint guardado en contexto {idx}")
 
             except Exception as e:
-                print(f"Error crítico en contexto {idx}: {str(e)}")
+                tqdm.write(f"Error crítico en contexto {idx}: {str(e)}")
                 with open("errores_v2.log", "a", encoding="utf-8") as err_log:
                     err_log.write(f"{context_id}\t{str(e)}\n")
 
