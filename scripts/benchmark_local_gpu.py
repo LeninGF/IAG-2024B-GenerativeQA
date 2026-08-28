@@ -82,17 +82,26 @@ def main():
         gpu_memory(logical_id)
 
     context_times = []
+    failures = []
     for idx in range(len(filtered_ds)):
         context = filtered_ds[idx]["relato"]
         start = time.perf_counter()
-        process_single_context_local(
-            context,
-            PREGUNTAS_COMUNES,
-            model,
-            context_id=f"bench_{idx}",
-            model_name=args.model,
-        )
+        try:
+            process_single_context_local(
+                context,
+                PREGUNTAS_COMUNES,
+                model,
+                context_id=f"bench_{idx}",
+                model_name=args.model,
+            )
+        except Exception as e:
+            print(f"Contexto {idx} falló: {e}. Se omite del benchmark.")
+            failures.append({"idx": idx, "error": str(e)})
+            continue
         context_times.append(time.perf_counter() - start)
+
+    if not context_times:
+        raise SystemExit("Todos los contextos fallaron; no hay métricas que reportar.")
 
     avg_context_time_s = sum(context_times) / len(context_times)
     contexts_per_min = 60.0 / avg_context_time_s
@@ -102,6 +111,9 @@ def main():
         "gpu_ids": args.gpu_ids,
         "quantize_4bit": not args.no_4bit,
         "num_samples": len(filtered_ds),
+        "num_success": len(context_times),
+        "num_failures": len(failures),
+        "failures": failures,
         "load_time_s": round(load_time_s, 2),
         "avg_context_time_s": round(avg_context_time_s, 3),
         "contexts_per_min": round(contexts_per_min, 2),
