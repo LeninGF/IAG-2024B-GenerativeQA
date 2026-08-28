@@ -45,6 +45,9 @@ como **baseline**; el nuevo dataset es un conjunto adicional para comparar.
   merge de los shards.
 - `scripts/run_build_parallel.sh`: wrapper bash equivalente al orquestador
   Python, para lanzar la misma corrida sin escribir comandos largos.
+- `scripts/zip_path.py`: utilidad de línea de comandos (solo stdlib) para
+  comprimir un archivo o carpeta (p. ej. datasets generados o logs de workers)
+  en un `.zip`, sin modificar los originales.
 
 ### Requisitos
 
@@ -170,4 +173,30 @@ python scripts/benchmark_local_gpu.py --model gemma-3-4b-it --gpu-ids 6,7 --num-
 Mide tiempo de carga del modelo, tiempo promedio de generación por contexto,
 contextos/min y uso de VRAM antes/después de cargar el modelo. Cada corrida
 agrega una línea JSON a `benchmark_results.jsonl` para comparar configuraciones.
+
+### Empaquetar datasets y logs (zip)
+
+Para comprimir un archivo o carpeta generada (dataset, logs de workers, etc.)
+sin borrar los originales:
+
+```bash
+# Comprimir una carpeta (dentro del zip se mantiene el nombre de la carpeta):
+python scripts/zip_path.py --input dataset
+
+# Comprimir un archivo concreto:
+python scripts/zip_path.py --input logs/worker_0.log
+
+# Destino explícito (crea los directorios intermedios y añade .zip si falta):
+python scripts/zip_path.py --input logs --output /tmp/logs_backup
+```
+
+Opciones:
+
+- `--input PATH` (obligatorio): archivo o carpeta a comprimir.
+- `--output PATH` (opcional): ruta del `.zip` de salida. Si se omite, crea
+  `<nombre>_<YYYYmmdd_HHMMSS>.zip` junto al origen (nombre de la carpeta, o
+  nombre base del archivo sin extensión).
+
+Se incluyen los archivos ocultos y las carpetas vacías; los originales nunca se
+modifican.
 
