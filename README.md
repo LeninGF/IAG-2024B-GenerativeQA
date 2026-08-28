@@ -40,6 +40,11 @@ como **baseline**; el nuevo dataset es un conjunto adicional para comparar.
   tiempo de carga y throughput de generación (contextos/min) de cada
   configuración de modelo sobre una muestra pequeña, antes de lanzar la
   corrida completa.
+- `scripts/run_build_parallel.py`: orquestador Python que lanza N workers
+  (uno por GPU) para modelos de 1 GPU, espera a que terminen y ejecuta el
+  merge de los shards.
+- `scripts/run_build_parallel.sh`: wrapper bash equivalente al orquestador
+  Python, para lanzar la misma corrida sin escribir comandos largos.
 
 ### Requisitos
 
@@ -66,6 +71,11 @@ scripts, `GPU_IDS` en la primera celda del notebook) *antes* de importar
 de modo de piloto hay que reiniciar el kernel/proceso. Los modelos de 1 GPU
 requieren un solo id (p. ej. `--gpu-ids 0`); los de 2 GPUs (`qwen2.5-7b-instruct`,
 `gemma-3-4b-it`) requieren exactamente dos (p. ej. `--gpu-ids 4,5`).
+
+Para los modelos de 1 GPU (`qwen2.5-3b-instruct`, `gemma-3-1b-it`) también se
+puede lanzar un worker por GPU física con `--worker-id`/`--num-workers`, o usar
+`scripts/run_build_parallel.sh`/`.py` que lo hace automáticamente (ver sección
+siguiente).
 
 ### Uso
 
@@ -94,8 +104,62 @@ requieren un solo id (p. ej. `--gpu-ids 0`); los de 2 GPUs (`qwen2.5-7b-instruct
    `--checkpoint-interval`, `--limit` (para pruebas rápidas), `--no-4bit`
    (desactiva la cuantización), `--max-memory-gib` (tope de VRAM por GPU,
    solo aplica a los modelos de 2 GPUs).
-5. El script reprocesa siempre el dataset completo (no hay deduplicación ni
-   reanudación automática).
+5. Por defecto el script procesa el dataset completo; con `--resume` omite
+   contextos ya completos y con `--use-dataset-sample` procesa una muestra
+   aleatoria reproducible (ver sección siguiente).
+
+### Ejecución en paralelo con réplicas (workers)
+
+Para los modelos de 1 GPU se puede repartir el trabajo entre varias GPUs:
+cada worker es un proceso independiente que carga su propia copia del modelo
+en una GPU y procesa un subconjunto distinto de contextos. Al final los shards
+se unen en un solo JSONL.
+
+El lanzador recomendado es:
+
+```bash
+bash scripts/run_build_parallel.sh \
+    --model gemma-3-1b-it \
+    --gpus 4,5,6,7 \
+    --use-dataset-sample --sample-size 17568 --sample-seed 42 \
+    --output-file dataset/squadv2_gemma_sample.jsonl
+```
+
+Equivalente en Python (misma interfaz):
+
+```bash
+python scripts/run_build_parallel.py \
+    --model qwen2.5-3b-instruct \
+    --gpus 0,1,2,3 \
+    --use-dataset-sample --sample-size 10000 --sample-seed 42 \
+    --output-file dataset/squadv2_qwen_sample.jsonl
+```
+
+Opciones útiles:
+
+- `--dry-run`: muestra los comandos de cada worker y el merge sin ejecutarlos.
+- `--no-merge`: lanza los workers pero no ejecuta el merge (para revisar shards).
+- `--resume`: reanuda workers interrumpidos.
+- `--limit N`: smoke test con solo N contextos.
+- `--log-dir DIR`: carpeta de logs de workers (default `logs`).
+- `--no-4bit`: desactiva la cuantización 4-bit.
+
+Smoke test de 8 contextos con 2 GPUs:
+
+```bash
+python scripts/run_build_parallel.py \
+    --model gemma-3-1b-it \
+    --gpus 4,5 \
+    --limit 8 \
+    --use-dataset-sample --sample-size 8 --sample-seed 42 \
+    --output-file /tmp/e2e_gemma.jsonl
+```
+
+También puedes lanzar los workers manualmente con
+`build_dataset_local_gpu.py --worker-id i --num-workers N` (uno por GPU) y
+luego `build_dataset_local_gpu.py --merge --output-file ...`. El orquestador
+espera a que terminen todos los workers, valida que cada `context_id` tenga
+5 filas y escribe el archivo final en `--output-file`.
 
 ### Benchmark de desempeño
 
