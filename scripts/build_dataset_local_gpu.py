@@ -12,6 +12,11 @@ Usage:
     python scripts/build_dataset_local_gpu.py --model qwen2.5-7b-instruct \
         --gpu-ids 4,5 --push-to-hub --repo-id LeninGF/robos-question-answering
 
+    # Resume an interrupted build (skips contexts already fully written):
+    python scripts/build_dataset_local_gpu.py --model qwen2.5-7b-instruct \
+        --gpu-ids 4,5 --output-file dataset/dataset_squad_v2_localgpu.json \
+        --resume
+
     # Push an already-generated JSONL without touching the GPU/model:
     python scripts/build_dataset_local_gpu.py --push-only \
         --input-file dataset/dataset_squad_v2_localgpu_20260827_120000.json \
@@ -52,6 +57,8 @@ def parse_args():
     parser.add_argument("--checkpoint-interval", type=int, default=100)
     parser.add_argument("--limit", type=int, default=None,
                          help="Optional cap on number of contexts to process (for smoke tests)")
+    parser.add_argument("--resume", action="store_true",
+                         help="Skip contexts already fully written in --output-file and clean partial contexts before continuing")
     parser.add_argument("--no-4bit", action="store_true", help="Disable 4-bit quantization")
     parser.add_argument("--max-memory-gib", type=int, default=12,
                          help="Per-GPU memory cap (GiB), used only for 2-GPU balanced models")
@@ -179,6 +186,7 @@ def main():
         questions=PREGUNTAS_COMUNES,
         checkpoint_interval=args.checkpoint_interval,
         model_name=args.model,
+        resume=args.resume,
     )
 
     if args.push_to_hub:

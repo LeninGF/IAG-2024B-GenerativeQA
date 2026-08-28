@@ -384,6 +384,51 @@ def process_single_context_local(context, questions, model, context_id=None, mod
     )
 
 
+def _scan_resume_state(output_file, questions):
+    """Scan an existing JSONL output for resume support.
+
+    Returns ``(completed_context_ids, partial_context_count)``.
+
+    A context is considered complete when it has exactly ``len(questions)`` rows
+    with the same ``context_id``. Partial groups (crashed/interrupted writes) are
+    removed from the file so they can be regenerated from scratch. Rows without
+    ``context_id`` are preserved and ignored (legacy compatibility).
+    """
+    if not os.path.exists(output_file):
+        return set(), 0
+
+    entries = []  # (raw_line, context_id or None, parsed_ok)
+    counts = {}
+    with open(output_file, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                obj = json.loads(stripped)
+            except json.JSONDecodeError:
+                entries.append((line, None, False))
+                continue
+            context_id = obj.get("context_id")
+            entries.append((line, context_id, True))
+            if context_id is not None:
+                counts[context_id] = counts.get(context_id, 0) + 1
+
+    completed_ids = {cid for cid, n in counts.items() if n == len(questions)}
+    partial_ids = {cid for cid, n in counts.items() if n != len(questions)}
+
+    if partial_ids:
+        kept_lines = [
+            line
+            for line, context_id, parsed_ok in entries
+            if (not parsed_ok) or context_id is None or context_id in completed_ids
+        ]
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.writelines(kept_lines)
+
+    return completed_ids, len(partial_ids)
+
+
 def process_full_dataset_local(
     dataset,
     output_file,
@@ -394,6 +439,7 @@ def process_full_dataset_local(
     context_id_fn=None,
     model_name=None,
     tokenizer=None,
+    resume=False,
 ):
     """Process every context in `dataset` and append the generated QA entries to `output_file`.
 
@@ -401,6 +447,10 @@ def process_full_dataset_local(
     Required when `dataset` is a re-indexed subset (e.g. `Dataset.select(...)`)
     so ids stay aligned with the original filtered_ds.
     Defaults to `f"{id_prefix}_{idx}"` (matches the original notebook).
+
+    When `resume=True`, contexts already fully written to `output_file` (one row
+    per question) are skipped, and partial context groups are removed so they are
+    regenerated cleanly.
     """
     questions = questions if questions is not None else PREGUNTAS_COMUNES
     if callable(context_id_fn):
@@ -411,13 +461,35 @@ def process_full_dataset_local(
     else:
         get_context_id = lambda idx: f"{id_prefix}_{idx}"
 
+    completed_context_ids = set()
+    cleaned_partial_contexts = 0
+    if resume:
+        completed_context_ids, cleaned_partial_contexts = _scan_resume_state(
+            output_file, questions
+        )
+        if completed_context_ids:
+            print(
+                f"Resume: {len(completed_context_ids)} contextos ya completos "
+                "en el archivo de salida; se omitirán."
+            )
+        if cleaned_partial_contexts:
+            print(
+                f"Resume: {cleaned_partial_contexts} contextos incompletos "
+                "eliminados del archivo; se regenerarán."
+            )
+
     output_dir = os.path.dirname(output_file)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
+    skipped_contexts = 0
     with open(output_file, "a", encoding="utf-8") as f:
         for idx in tqdm(range(len(dataset)), desc=f"{model_name or id_prefix}"):
             context_id = get_context_id(idx)
+
+            if resume and context_id in completed_context_ids:
+                skipped_contexts += 1
+                continue
 
             try:
                 context = dataset[idx]["relato"]
@@ -443,3 +515,5 @@ def process_full_dataset_local(
                     err_log.write(f"{context_id}\t{str(e)}\n")
 
     print("Procesamiento completo!")
+    if skipped_contexts:
+        print(f"Resume: {skipped_contexts} contextos omitidos por estar ya completos.")
