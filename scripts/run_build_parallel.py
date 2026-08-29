@@ -15,7 +15,7 @@ Usage examples:
 
     # Same, but with a larger per-answer token budget:
     python scripts/run_build_parallel.py --model qwen2.5-3b-instruct \
-        --gpus 0,1,2,3 --max-new-tokens 256 \
+        --gpus 0,1,2,3 --max-new-tokens 512 \
         --output-file dataset/squadv2_qwen_sample.jsonl
 
     # Print the worker commands without launching them:
@@ -62,8 +62,8 @@ def parse_args():
     parser.add_argument("--no-4bit", action="store_true", help="Disable 4-bit quantization")
     parser.add_argument("--max-memory-gib", type=int, default=12,
                         help="Per-GPU memory cap (GiB), only used by 2-GPU balanced models")
-    parser.add_argument("--max-new-tokens", type=int, default=128,
-                        help="Maximum number of new tokens per generated answer (default 128)")
+    parser.add_argument("--max-new-tokens", type=int, default=512,
+                        help="Maximum number of new tokens per generated answer (default 512)")
     parser.add_argument("--max-retries", type=int, default=2,
                         help="Number of retries per question after the first attempt (default 2)")
     parser.add_argument("--retry-delay", type=int, default=3,

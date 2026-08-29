@@ -10,7 +10,7 @@
 #       --gpus 0,1,2,3 --output-file dataset/squadv2_qwen_sample.jsonl --dry-run
 #
 #   bash scripts/run_build_parallel.sh --model qwen2.5-3b-instruct \
-#       --gpus 0,1,2,3 --max-new-tokens 256 --max-retries 2 --retry-delay 3 \
+#       --gpus 0,1,2,3 --max-new-tokens 512 --max-retries 2 --retry-delay 3 \
 #       --output-file dataset/squadv2_qwen_sample.jsonl
 set -euo pipefail
 
