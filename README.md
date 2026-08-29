@@ -147,6 +147,38 @@ Opciones útiles:
 - `--log-dir DIR`: carpeta de logs de workers (default `logs`).
 - `--no-4bit`: desactiva la cuantización 4-bit.
 
+### Nota sobre los logs de workers
+
+Los logs de los workers (`<modelo>_worker_<i>.log` dentro de `--log-dir`) se
+**sobrescriben en cada ejecución** (se abren en modo escritura), no se acumulan.
+Si quieres conservar las ejecuciones históricas (p. ej. las pruebas de días
+distintos) para analizarlas de forma independiente, **respáldalos antes de
+volver a lanzar** o usa un `--log-dir` distinto por corrida (p. ej.
+`--log-dir logs/qwen_20260829`).
+
+Ejemplo de respaldo antes de repetir una corrida:
+
+```bash
+cp -r logs logs_backup_$(date +%Y%m%d_%H%M%S)
+```
+
+Recuerda que el `.log` del `nohup` del orquestador (el que rediriges con
+`> logs/qwen_dataset.log 2>&1`) sí puede usar cualquier nombre, pero los logs de
+los **workers** dependen de `--log-dir` y se sobrescriben.
+
+Para analizar los logs (conteo de `JSON INVALIDO`, `Error crítico`, truncamientos
+de JSON, distribución de longitud de respuestas, acuerdo entre Qwen y Gemma,
+etc.) usa el script `scripts/logs_reviewer/logs_reviewer.py` (ver su `README.md`).
+Apúntalo a la carpeta con los logs de la corrida que quieras revisar
+(`--logs-dir`), p. ej.:
+
+```bash
+python scripts/logs_reviewer/logs_reviewer.py all \
+    --logs-dir logs/qwen_20260829 \
+    --qwen-dataset dataset/dataset_squadv2_M1/squadv2_qwen2.5-3b.jsonl \
+    --gemma-dataset dataset/dataset_squadv2_M1/squadv2_gemma-3-1b.jsonl
+```
+
 Smoke test de 8 contextos con 2 GPUs:
 
 ```bash
