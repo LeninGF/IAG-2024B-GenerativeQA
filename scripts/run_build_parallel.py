@@ -13,6 +13,11 @@ Usage examples:
         --use-dataset-sample --sample-size 17568 --sample-seed 42 \
         --output-file dataset/squadv2_gemma_sample.jsonl
 
+    # Same, but with a larger per-answer token budget:
+    python scripts/run_build_parallel.py --model qwen2.5-3b-instruct \
+        --gpus 0,1,2,3 --max-new-tokens 256 \
+        --output-file dataset/squadv2_qwen_sample.jsonl
+
     # Print the worker commands without launching them:
     python scripts/run_build_parallel.py --model qwen2.5-3b-instruct \
         --gpus 0,1,2,3 --output-file dataset/squadv2_qwen_sample.jsonl \
@@ -57,6 +62,12 @@ def parse_args():
     parser.add_argument("--no-4bit", action="store_true", help="Disable 4-bit quantization")
     parser.add_argument("--max-memory-gib", type=int, default=12,
                         help="Per-GPU memory cap (GiB), only used by 2-GPU balanced models")
+    parser.add_argument("--max-new-tokens", type=int, default=128,
+                        help="Maximum number of new tokens per generated answer (default 128)")
+    parser.add_argument("--max-retries", type=int, default=2,
+                        help="Number of retries per question after the first attempt (default 2)")
+    parser.add_argument("--retry-delay", type=int, default=3,
+                        help="Seconds to wait between retries (default 3; increase to 10 when using cloud/API-backed generation)")
     parser.add_argument("--log-dir", default="logs",
                         help="Directory where worker logs are written (default: logs)")
     parser.add_argument("--no-merge", action="store_true",
@@ -69,6 +80,12 @@ def parse_args():
         parser.error("--sample-size requires --use-dataset-sample")
     if args.use_dataset_sample and args.sample_size is not None and args.sample_size < 1:
         parser.error("--sample-size must be >= 1")
+    if args.max_new_tokens < 1:
+        parser.error("--max-new-tokens must be >= 1")
+    if args.max_retries < 0:
+        parser.error("--max-retries must be >= 0")
+    if args.retry_delay < 0:
+        parser.error("--retry-delay must be >= 0")
 
     return args
 
@@ -96,6 +113,9 @@ def build_worker_cmd(args, gpu, worker_id, num_workers):
     if args.no_4bit:
         cmd += ["--no-4bit"]
     cmd += ["--max-memory-gib", str(args.max_memory_gib)]
+    cmd += ["--max-new-tokens", str(args.max_new_tokens)]
+    cmd += ["--max-retries", str(args.max_retries)]
+    cmd += ["--retry-delay", str(args.retry_delay)]
     return cmd
 
 

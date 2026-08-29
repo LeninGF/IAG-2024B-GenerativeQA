@@ -212,10 +212,10 @@ def build_prompt(context, question):
     """
 
 
-def generate_qwen_answer(context, question, model):
+def generate_qwen_answer(context, question, model, max_new_tokens=128):
     """Qwen path: stable with outlines + structured JSON generation."""
     prompt = build_prompt(context, question)
-    raw = model(prompt, AnswerSchema, max_new_tokens=128, do_sample=False)
+    raw = model(prompt, AnswerSchema, max_new_tokens=max_new_tokens, do_sample=False)
     response_json = AnswerSchema.model_validate_json(raw).model_dump()
     return response_json
 
@@ -230,7 +230,7 @@ def get_tokenizer_for_model(model_name):
     return AutoTokenizer.from_pretrained(repo_id)
 
 
-def generate_gemma_answer(context, question, model, model_name=None, tokenizer=None):
+def generate_gemma_answer(context, question, model, model_name=None, tokenizer=None, max_new_tokens=128):
     """Gemma path: use the documented chat-template + model.generate contract instead of outlines."""
     if tokenizer is None:
         tokenizer = get_tokenizer_for_model(model_name)
@@ -258,7 +258,7 @@ def generate_gemma_answer(context, question, model, model_name=None, tokenizer=N
     inputs = tokenizer(text, return_tensors="pt").to(hf_model.device)
     generated_ids = hf_model.generate(
         **inputs,
-        max_new_tokens=128,
+        max_new_tokens=max_new_tokens,
         do_sample=False,
     )
     generated_text = tokenizer.decode(
@@ -269,39 +269,65 @@ def generate_gemma_answer(context, question, model, model_name=None, tokenizer=N
     return parse_json_answer(generated_text)
 
 
-def generate_squad_entry_local(context, questions, model, context_id=None, model_name=None, tokenizer=None):
+def generate_single_answer_local(context, question, model, context_id=None, model_name=None, tokenizer=None, max_new_tokens=128):
+    """Generate and validate one SQuAD-v2-style answer row for a single question."""
+    if model_name is not None and "gemma" in model_name.lower():
+        if tokenizer is None:
+            tokenizer = get_tokenizer_for_model(model_name)
+        response_json = generate_gemma_answer(
+            context,
+            question,
+            model,
+            model_name=model_name,
+            tokenizer=tokenizer,
+            max_new_tokens=max_new_tokens,
+        )
+    else:
+        response_json = generate_qwen_answer(
+            context,
+            question,
+            model,
+            max_new_tokens=max_new_tokens,
+        )
+
+    start_position, end_position, impossible_flag = find_start_end_answer(
+        context=context, answer=response_json.get("answer_text", "")
+    )
+
+    # Trust the deterministic substring check over the LLM's own is_impossible label,
+    # which can contradict a correctly-filled answer_text.
+    response_json["is_impossible"] = "imposible" if impossible_flag else "respondido"
+
+    dataset_details = {
+        "context": context,
+        "question": question,
+        "answer_start": start_position,
+        "answer_end": end_position,
+        "impossible_find_answer": impossible_flag,
+    }
+
+    response_full = {**dataset_details, **response_json}
+    if context_id is not None:
+        response_full["context_id"] = context_id
+
+    return response_full
+
+
+def generate_squad_entry_local(context, questions, model, context_id=None, model_name=None, tokenizer=None, max_new_tokens=128):
     """Dispatcher by model family. Qwen uses outlines; Gemma uses the native chat-template path."""
     answer_list = []
     for question in questions:
-        if model_name is not None and "gemma" in model_name.lower():
-            if tokenizer is None:
-                tokenizer = get_tokenizer_for_model(model_name)
-            response_json = generate_gemma_answer(context, question, model, model_name=model_name, tokenizer=tokenizer)
-        else:
-            response_json = generate_qwen_answer(context, question, model)
-
-        start_position, end_position, impossible_flag = find_start_end_answer(
-            context=context, answer=response_json.get("answer_text", "")
+        answer_list.append(
+            generate_single_answer_local(
+                context,
+                question,
+                model,
+                context_id=context_id,
+                model_name=model_name,
+                tokenizer=tokenizer,
+                max_new_tokens=max_new_tokens,
+            )
         )
-
-        # Trust the deterministic substring check over the LLM's own is_impossible label,
-        # which can contradict a correctly-filled answer_text.
-        response_json["is_impossible"] = "imposible" if impossible_flag else "respondido"
-
-        dataset_details = {
-            "context": context,
-            "question": question,
-            "answer_start": start_position,
-            "answer_end": end_position,
-            "impossible_find_answer": impossible_flag,
-        }
-
-        response_full = {**dataset_details, **response_json}
-        if context_id is not None:
-            response_full["context_id"] = context_id
-
-        answer_list.append(response_full)
-
     return answer_list
 
 
@@ -353,27 +379,29 @@ def compare_model_answers(entries_a, entries_b, similarity_threshold=0.7):
     return comparisons
 
 
-def retry(max_retries=3, delay=5):
-    """Retry decorator for local generation (no API rate limit, only transient GPU/parse errors)."""
+def retry(max_retries=3, delay=3):
+    """Retry decorator for local generation (no API rate limit, only transient GPU/parse errors).
+
+    `max_retries` is the number of retries *after* the first attempt, so the
+    function is called up to `max_retries + 1` times total.
+    """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            attempts = 0
-            while True:
+            for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    attempts += 1
-                    if attempts >= max_retries:
+                    if attempt == max_retries:
                         raise Exception(f"Fallo después de {max_retries} reintentos") from e
-                    print(f"Error ({e}), reintentando ({attempts}/{max_retries})...")
-                    time.sleep(delay * attempts)
+                    print(f"Error ({e}), reintentando ({attempt + 1}/{max_retries})...")
+                    time.sleep(delay * (attempt + 1))
         return wrapper
     return decorator
 
 
-@retry(max_retries=2, delay=10)
-def process_single_context_local(context, questions, model, context_id=None, model_name=None, tokenizer=None):
+@retry(max_retries=2, delay=3)
+def process_single_context_local(context, questions, model, context_id=None, model_name=None, tokenizer=None, max_new_tokens=128):
     return generate_squad_entry_local(
         context,
         questions,
@@ -381,6 +409,7 @@ def process_single_context_local(context, questions, model, context_id=None, mod
         context_id=context_id,
         model_name=model_name,
         tokenizer=tokenizer,
+        max_new_tokens=max_new_tokens,
     )
 
 
@@ -429,6 +458,56 @@ def _scan_resume_state(output_file, questions):
     return completed_ids, len(partial_ids)
 
 
+def _process_question_with_fallback(
+    context,
+    question,
+    model,
+    context_id,
+    model_name,
+    tokenizer,
+    max_new_tokens,
+    max_retries,
+    delay=3,
+):
+    """Generate one question with per-question retries.
+
+    If all attempts fail, return a fallback impossible row instead of raising,
+    so the context keeps exactly ``len(questions)`` rows.
+    """
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            return generate_single_answer_local(
+                context,
+                question,
+                model,
+                context_id=context_id,
+                model_name=model_name,
+                tokenizer=tokenizer,
+                max_new_tokens=max_new_tokens,
+            )
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                print(f"Error ({e}), reintentando ({attempt + 1}/{max_retries})...")
+                time.sleep(delay * (attempt + 1))
+
+    print(f"Error crítico en pregunta '{question}' (contexto {context_id}): {last_error}")
+    with open("errores_v2.log", "a", encoding="utf-8") as err_log:
+        err_log.write(f"{context_id}\t{question}\t{last_error}\n")
+
+    return {
+        "context": context,
+        "question": question,
+        "answer_text": NO_ANSWER_SENTINEL,
+        "is_impossible": "imposible",
+        "answer_start": 0,
+        "answer_end": 0,
+        "impossible_find_answer": True,
+        "context_id": context_id,
+    }
+
+
 def process_full_dataset_local(
     dataset,
     output_file,
@@ -440,6 +519,9 @@ def process_full_dataset_local(
     model_name=None,
     tokenizer=None,
     resume=False,
+    max_new_tokens=128,
+    max_retries=2,
+    retry_delay=3,
 ):
     """Process every context in `dataset` and append the generated QA entries to `output_file`.
 
@@ -451,6 +533,10 @@ def process_full_dataset_local(
     When `resume=True`, contexts already fully written to `output_file` (one row
     per question) are skipped, and partial context groups are removed so they are
     regenerated cleanly.
+
+    Questions are generated one-by-one with `max_retries` retries each. If a
+    question still fails, a fallback `RESPUESTA_NO_ENCONTRADA` / `imposible`
+    row is written so every context keeps exactly ``len(questions)`` rows.
     """
     questions = questions if questions is not None else PREGUNTAS_COMUNES
     if callable(context_id_fn):
@@ -493,26 +579,34 @@ def process_full_dataset_local(
 
             try:
                 context = dataset[idx]["relato"]
-                results = process_single_context_local(
-                    context,
-                    questions,
-                    model,
-                    context_id=context_id,
-                    model_name=model_name,
-                    tokenizer=tokenizer,
-                )
-
-                for res in results:
-                    f.write(json.dumps(res, ensure_ascii=False) + "\n")
-
-                if idx % checkpoint_interval == 0:
-                    f.flush()
-                    tqdm.write(f"Checkpoint guardado en contexto {idx}")
-
             except Exception as e:
                 tqdm.write(f"Error crítico en contexto {idx}: {str(e)}")
                 with open("errores_v2.log", "a", encoding="utf-8") as err_log:
-                    err_log.write(f"{context_id}\t{str(e)}\n")
+                    err_log.write(f"{context_id}\t(lectura contexto)\t{str(e)}\n")
+                continue
+
+            results = []
+            for question in questions:
+                results.append(
+                    _process_question_with_fallback(
+                        context=context,
+                        question=question,
+                        model=model,
+                        context_id=context_id,
+                        model_name=model_name,
+                        tokenizer=tokenizer,
+                        max_new_tokens=max_new_tokens,
+                        max_retries=max_retries,
+                        delay=retry_delay,
+                    )
+                )
+
+            for res in results:
+                f.write(json.dumps(res, ensure_ascii=False) + "\n")
+
+            if idx % checkpoint_interval == 0:
+                f.flush()
+                tqdm.write(f"Checkpoint guardado en contexto {idx}")
 
     print("Procesamiento completo!")
     if skipped_contexts:

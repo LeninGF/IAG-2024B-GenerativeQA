@@ -32,6 +32,12 @@ Usage:
         --gpu-ids 4 --use-dataset-sample --sample-size 5000 --sample-seed 42 \
         --output-file dataset/squadv2_qwen_sample.jsonl
 
+    # Use a larger token budget for long literal answers (e.g. lists of stolen
+    # objects); default is 128 for backward compatibility:
+    python scripts/build_dataset_local_gpu.py --model qwen2.5-3b-instruct \
+        --gpu-ids 4 --use-dataset-sample --sample-size 5000 --max-new-tokens 256 \
+        --output-file dataset/squadv2_qwen_sample.jsonl
+
     # Push an already-generated JSONL without touching the GPU/model:
     python scripts/build_dataset_local_gpu.py --push-only \
         --input-file dataset/dataset_squad_v2_localgpu_20260827_120000.json \
@@ -100,6 +106,12 @@ def parse_args():
     parser.add_argument("--no-4bit", action="store_true", help="Disable 4-bit quantization")
     parser.add_argument("--max-memory-gib", type=int, default=12,
                          help="Per-GPU memory cap (GiB), used only for 2-GPU balanced models")
+    parser.add_argument("--max-new-tokens", type=int, default=128,
+                         help="Maximum number of new tokens per generated answer (default 128)")
+    parser.add_argument("--max-retries", type=int, default=2,
+                         help="Number of retries per question after the first attempt (default 2)")
+    parser.add_argument("--retry-delay", type=int, default=3,
+                         help="Seconds to wait between retries (default 3; increase to 10 when using cloud/API-backed generation)")
     parser.add_argument("--push-only", action="store_true",
                          help="Skip GPU/model loading and generation; just push --input-file to --repo-id")
     parser.add_argument("--push-to-hub", action="store_true",
@@ -109,6 +121,13 @@ def parse_args():
     parser.add_argument("--repo-id", default=None,
                          help="Destination Hugging Face dataset repo, e.g. 'LeninGF/robos-question-answering'")
     args = parser.parse_args()
+
+    if args.max_new_tokens < 1:
+        parser.error("--max-new-tokens must be >= 1")
+    if args.max_retries < 0:
+        parser.error("--max-retries must be >= 0")
+    if args.retry_delay < 0:
+        parser.error("--retry-delay must be >= 0")
 
     if args.merge:
         if not args.output_file:
@@ -326,6 +345,9 @@ def main():
         model_name=args.model,
         resume=args.resume,
         context_id_fn=context_id_fn,
+        max_new_tokens=args.max_new_tokens,
+        max_retries=args.max_retries,
+        retry_delay=args.retry_delay,
     )
 
     if args.push_to_hub:
