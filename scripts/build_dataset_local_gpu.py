@@ -27,6 +27,14 @@ Usage:
     python scripts/build_dataset_local_gpu.py --merge \
         --output-file dataset/squadv2_gemma.jsonl
 
+    # Resume an interrupted replica build while changing the number of GPUs/workers:
+    # use scripts/plan_resume_shards.py to generate one --resume-manifest per new
+    # GPU (see README.md), then each worker is launched like this:
+    python scripts/build_dataset_local_gpu.py --model gemma-3-1b-it \
+        --gpu-ids 0 --worker-id 0 \
+        --resume-manifest dataset/resume_manifests/gemma-3-1b-it_20260829_120000/worker_0.json \
+        --output-file dataset/squadv2_gemma.jsonl
+
     # Reproducible random sample (default 10000 contexts when --use-dataset-sample):
     python scripts/build_dataset_local_gpu.py --model qwen2.5-3b-instruct \
         --gpu-ids 4 --use-dataset-sample --sample-size 5000 --sample-seed 42 \
@@ -103,6 +111,10 @@ def parse_args():
                          help="Seed for reproducible random sampling (default 42).")
     parser.add_argument("--resume", action="store_true",
                          help="Skip contexts already fully written in --output-file and clean partial contexts before continuing")
+    parser.add_argument("--resume-manifest", default=None,
+                         help="JSON file (list of {filtered_idx, context_id}) produced by "
+                              "scripts/plan_resume_shards.py; bypasses --num-workers/--use-dataset-sample and "
+                              "processes exactly the listed filtered-dataset indices. Requires --worker-id.")
     parser.add_argument("--no-4bit", action="store_true", help="Disable 4-bit quantization")
     parser.add_argument("--max-memory-gib", type=int, default=12,
                          help="Per-GPU memory cap (GiB), used only for 2-GPU balanced models")
@@ -140,7 +152,16 @@ def parse_args():
             parser.error("--merge cannot be combined with --model/--gpu-ids")
         return args
 
-    if (args.worker_id is None) != (args.num_workers is None):
+    if args.resume_manifest:
+        if args.worker_id is None:
+            parser.error("--resume-manifest requires --worker-id (used to name the output shard)")
+        if args.num_workers is not None:
+            parser.error("--resume-manifest cannot be combined with --num-workers (indices come from the manifest)")
+        if args.use_dataset_sample:
+            parser.error("--resume-manifest cannot be combined with --use-dataset-sample (the manifest already selects exact indices)")
+        if args.push_to_hub:
+            parser.error("--push-to-hub cannot be combined with --resume-manifest; merge shards first, then push")
+    elif (args.worker_id is None) != (args.num_workers is None):
         parser.error("--worker-id and --num-workers must be used together")
     if args.num_workers is not None:
         if args.num_workers < 1:
@@ -300,33 +321,48 @@ def main():
     filtered_ds = build_filtered_dataset(args.dataset_path, limit=args.limit)
     print(f"Contextos disponibles tras filtro {MIN_WORDS}-{MAX_WORDS} palabras: {len(filtered_ds)}")
 
-    sampled_indices = None
-    dataset_to_process = filtered_ds
-    if args.use_dataset_sample:
-        sample_size = args.sample_size if args.sample_size is not None else DEFAULT_SAMPLE_SIZE
-        sampled_indices = sample_dataset_indices(len(filtered_ds), sample_size, args.sample_seed)
-        dataset_to_process = filtered_ds.select(sampled_indices)
-        print(
-            f"Muestra aleatoria: {len(sampled_indices)} contextos "
-            f"(seed {args.sample_seed}, size {len(sampled_indices)})"
-        )
-
-    output_file = args.output_file
-    if args.num_workers is not None:
-        worker_indices = list(range(args.worker_id, len(dataset_to_process), args.num_workers))
-        dataset_to_process = dataset_to_process.select(worker_indices)
+    # Manifest mode (from scripts/plan_resume_shards.py) selects exact filtered_ds indices
+    # directly, bypassing --use-dataset-sample/--num-workers entirely. Kept as a fully
+    # separate branch so the stride-based path below is untouched.
+    if args.resume_manifest:
+        with open(args.resume_manifest, "r", encoding="utf-8") as mf:
+            manifest_entries = json.load(mf)
+        dataset_to_process = filtered_ds.select([entry["filtered_idx"] for entry in manifest_entries])
+        manifest_context_ids = [entry["context_id"] for entry in manifest_entries]
+        context_id_fn = lambda i, cids=manifest_context_ids: cids[i]  # noqa: E731
         output_file = f"{args.output_file}.worker-{args.worker_id}"
-        if sampled_indices is not None:
-            context_id_fn = lambda i, wi=worker_indices, si=sampled_indices: f"context_{si[wi[i]]}"
-        else:
-            context_id_fn = lambda i, wi=worker_indices: f"context_{wi[i]}"
         print(
-            f"Worker {args.worker_id}/{args.num_workers}: {len(dataset_to_process)} contextos -> {output_file}"
+            f"Resume-manifest: {len(dataset_to_process)} contextos asignados desde "
+            f"{args.resume_manifest} -> {output_file}"
         )
-    elif sampled_indices is not None:
-        context_id_fn = lambda i, si=sampled_indices: f"context_{si[i]}"
     else:
-        context_id_fn = lambda i: f"context_{i}"
+        sampled_indices = None
+        dataset_to_process = filtered_ds
+        if args.use_dataset_sample:
+            sample_size = args.sample_size if args.sample_size is not None else DEFAULT_SAMPLE_SIZE
+            sampled_indices = sample_dataset_indices(len(filtered_ds), sample_size, args.sample_seed)
+            dataset_to_process = filtered_ds.select(sampled_indices)
+            print(
+                f"Muestra aleatoria: {len(sampled_indices)} contextos "
+                f"(seed {args.sample_seed}, size {len(sampled_indices)})"
+            )
+
+        output_file = args.output_file
+        if args.num_workers is not None:
+            worker_indices = list(range(args.worker_id, len(dataset_to_process), args.num_workers))
+            dataset_to_process = dataset_to_process.select(worker_indices)
+            output_file = f"{args.output_file}.worker-{args.worker_id}"
+            if sampled_indices is not None:
+                context_id_fn = lambda i, wi=worker_indices, si=sampled_indices: f"context_{si[wi[i]]}"  # noqa: E731
+            else:
+                context_id_fn = lambda i, wi=worker_indices: f"context_{wi[i]}"  # noqa: E731
+            print(
+                f"Worker {args.worker_id}/{args.num_workers}: {len(dataset_to_process)} contextos -> {output_file}"
+            )
+        elif sampled_indices is not None:
+            context_id_fn = lambda i, si=sampled_indices: f"context_{si[i]}"  # noqa: E731
+        else:
+            context_id_fn = lambda i: f"context_{i}"  # noqa: E731
 
     logical_gpu_ids = list(range(len(gpu_ids)))
     model = load_local_model(

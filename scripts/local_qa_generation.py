@@ -458,6 +458,11 @@ def _scan_resume_state(output_file, questions):
     return completed_ids, len(partial_ids)
 
 
+# Public alias so other scripts (e.g. plan_resume_shards.py) can reuse the same
+# scan/cleanup logic without reaching into a "private" (_-prefixed) symbol.
+scan_resume_state = _scan_resume_state
+
+
 def _process_question_with_fallback(
     context,
     question,

@@ -196,6 +196,70 @@ luego `build_dataset_local_gpu.py --merge --output-file ...`. El orquestador
 espera a que terminen todos los workers, valida que cada `context_id` tenga
 5 filas y escribe el archivo final en `--output-file`.
 
+### Reanudar una corrida cambiando el número de GPUs
+
+Si una corrida de `run_build_parallel.sh` se interrumpe (o quieres sumar/quitar
+GPUs a mitad de camino), **no** relances simplemente con `--gpus` distinto: el
+reparto de contextos por worker depende del número de GPUs (`--num-workers`),
+así que cambiarlo reindexa todo y los shards viejos (`.worker-0`, `.worker-1`,
+...) dejan de corresponder a lo que le tocaría a cada nuevo worker. Usa en su
+lugar `scripts/plan_resume_shards.py`, que reparte sólo lo que falta entre las
+GPUs libres, sin reprocesar lo ya generado. Esto no modifica el resume normal
+(`--resume`/`--num-workers`) ni el orquestador; es un flujo aparte y opcional.
+
+1. **Revisar el progreso de cada worker antes de matar nada.** Cada worker
+   tiene su propio avance y su propio checkpoint (`--checkpoint-interval`,
+   default 100). Mira en su log la última línea
+   `Checkpoint guardado en contexto N`; si el próximo checkpoint está cerca,
+   conviene esperar unos minutos a que aparezca antes de matar ese proceso
+   (minimiza cuánto se pierde por buffering no flusheado).
+
+2. **Detener los workers del modelo a reasignar, uno por uno:**
+
+   ```bash
+   ps aux | grep "build_dataset_local_gpu.py --model gemma-3-1b-it"
+   kill <pid>          # SIGTERM; no uses -9 salvo que no responda en ~10s
+   nvidia-smi          # confirmar que la VRAM de esa GPU se liberó
+   ```
+
+3. **Generar el manifiesto** con las GPUs realmente libres en ese momento
+   (nunca asumas un número fijo; pásalo explícito en `--new-gpus`):
+
+   ```bash
+   python scripts/plan_resume_shards.py \
+       --model gemma-3-1b-it \
+       --output-file ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl \
+       --sample-size 20000 --sample-seed 42 \
+       --new-gpus 0,1,2,3,4,5,6,7 \
+       --max-new-tokens 512
+   ```
+
+   `--dataset-path`, `--sample-size` y `--sample-seed` deben coincidir
+   exactamente con los de la corrida original para que los `context_id` sigan
+   alineados al mismo texto. El comando hace backup (`.bak_<timestamp>`) de
+   cada shard existente antes de limpiar contextos parciales, imprime cuántos
+   contextos ya están completos y cuántos faltan, y escribe en
+   `dataset/resume_manifests/<modelo>_<timestamp>/` un manifiesto JSON por GPU
+   nueva más un `launch_resume.sh` listo para ejecutar.
+
+4. **Lanzar el resume:**
+
+   ```bash
+   bash dataset/resume_manifests/gemma-3-1b-it_<timestamp>/launch_resume.sh
+   ```
+
+   Cada worker corre con `build_dataset_local_gpu.py --resume-manifest ...`,
+   que procesa exactamente los índices listados en su manifiesto (no
+   recalcula ningún reparto por GPU) y escribe logs en una carpeta **nueva**
+   con timestamp (nunca pisa los logs de la corrida anterior).
+
+5. **Merge final**, igual que siempre:
+
+   ```bash
+   python scripts/build_dataset_local_gpu.py --merge \
+       --output-file ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl
+   ```
+
 ### Benchmark de desempeño
 
 ```bash
