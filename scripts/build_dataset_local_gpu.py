@@ -32,7 +32,7 @@ Usage:
     # GPU (see README.md), then each worker is launched like this:
     python scripts/build_dataset_local_gpu.py --model gemma-3-1b-it \
         --gpu-ids 0 --worker-id 0 \
-        --resume-manifest dataset/resume_manifests/gemma-3-1b-it_20260829_120000/worker_0.json \
+        --resume-manifest resume_manifests/gemma-3-1b-it_20260829_120000/worker_0.json \
         --output-file dataset/squadv2_gemma.jsonl
 
     # Reproducible random sample (default 10000 contexts when --use-dataset-sample):

@@ -21,7 +21,7 @@ Usage:
         --max-new-tokens 512
 
 This prints a summary (total/completed/remaining contexts) and writes, under
-dataset/resume_manifests/<model>_<timestamp>/:
+resume_manifests/<model>_<timestamp>/:
     worker_0.json ... worker_{N-1}.json   (one manifest per new GPU)
     launch_resume.sh                      (ready-to-run launcher, one process per GPU)
 """
@@ -65,7 +65,7 @@ def parse_args():
                               "Length can differ from the original run; pass exactly what is free.")
     parser.add_argument("--manifest-dir", default=None,
                          help="Where to write manifests/launcher (default: "
-                              "dataset/resume_manifests/<model>_<timestamp>)")
+                              "resume_manifests/<model>_<timestamp>)")
     parser.add_argument("--log-dir", default=None,
                          help="Where the generated launcher writes worker logs (default: "
                               "logs/<model>_resume_<timestamp>; never reuses a previous --log-dir)")
@@ -85,7 +85,7 @@ def main():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     manifest_dir = args.manifest_dir or os.path.join(
-        REPO_ROOT, "dataset", "resume_manifests", f"{args.model}_{timestamp}"
+        REPO_ROOT, "resume_manifests", f"{args.model}_{timestamp}"
     )
     log_dir = args.log_dir or os.path.join(REPO_ROOT, "logs", f"{args.model}_resume_{timestamp}")
     os.makedirs(manifest_dir, exist_ok=True)

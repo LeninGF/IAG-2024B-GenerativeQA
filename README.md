@@ -239,13 +239,13 @@ GPUs libres, sin reprocesar lo ya generado. Esto no modifica el resume normal
    alineados al mismo texto. El comando hace backup (`.bak_<timestamp>`) de
    cada shard existente antes de limpiar contextos parciales, imprime cuántos
    contextos ya están completos y cuántos faltan, y escribe en
-   `dataset/resume_manifests/<modelo>_<timestamp>/` un manifiesto JSON por GPU
+   `resume_manifests/<modelo>_<timestamp>/` un manifiesto JSON por GPU
    nueva más un `launch_resume.sh` listo para ejecutar.
 
 4. **Lanzar el resume:**
 
    ```bash
-   bash dataset/resume_manifests/gemma-3-1b-it_<timestamp>/launch_resume.sh
+   bash resume_manifests/gemma-3-1b-it_<timestamp>/launch_resume.sh
    ```
 
    Cada worker corre con `build_dataset_local_gpu.py --resume-manifest ...`,
