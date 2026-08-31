@@ -309,13 +309,15 @@ audit de 200 filas etiquetadas.
 
 ### Preparar y subir el dataset final a Hugging Face
 
-`scripts/prepare_final_dataset.py` no aplica filtros adicionales: valida el
-esquema SQuAD v2, deriva `context_id` del campo `id`, hace un split por contexto
-(train/dev/test, default 80/10/10, seed 42) y opcionalmente sube las tres
-particiones a Hugging Face.
+`scripts/prepare_final_dataset.py` no aplica filtros adicionales de calidad:
+valida el esquema SQuAD v2, deriva `context_id` del campo `id`, hace un split por
+contexto (train/dev/test, default 80/10/10, seed 42), **excluye por defecto los
+pares `(context, question)` del gold audit** (`out_qc_M2/audit_stratified_sample_labeled_v1.csv`)
+para evitar fuga de datos, escribe `gold_test.jsonl` con las 200 filas del gold
+audit y opcionalmente sube `train`/`validation`/`test`/`gold_test` a Hugging Face.
 
 ```bash
-# Preparar localmente (por defecto usa out_qc_M2/squadv2_final_merged.jsonl):
+# Preparar localmente (gold audit excluido por defecto):
 python scripts/prepare_final_dataset.py --output-dir dataset/prepared_m2
 
 # Smoke test con solo 20 contextos:
@@ -327,6 +329,9 @@ python scripts/prepare_final_dataset.py \
     --output-dir dataset/prepared_m2 \
     --repo-id LeninGF/robos-question-answering-m2 \
     --push
+
+# Desactivar la exclusión del gold audit (no recomendado):
+python scripts/prepare_final_dataset.py --no-exclude-gold
 ```
 
 También sigue disponible el modo `--push-only` de
@@ -364,6 +369,18 @@ python scripts/run_qa_ablation.py --plan-only --plan-gpus 8 \
 
 # Ejecutar toda la matriz secuencialmente en una GPU:
 python scripts/run_qa_ablation.py --all --gpu 0 --output-dir out_experiments/run1
+
+# Usar el dataset final preparado localmente (gold audit ya excluido):
+python scripts/run_qa_ablation.py \
+    --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+    --dataset merged --mode both --gpu 0 \
+    --data-dir dataset/prepared_m2 --output-dir out_experiments/run1
+
+# Usar el dataset final directamente desde Hugging Face:
+python scripts/run_qa_ablation.py \
+    --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+    --dataset merged --mode both --gpu 0 \
+    --hf-dataset LeninGF/robos-question-answering-m2 --output-dir out_experiments/run1
 ```
 
 Cada experimento escribe sus resultados en
