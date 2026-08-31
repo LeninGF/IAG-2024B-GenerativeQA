@@ -295,6 +295,14 @@ def make_eval_features(examples, tokenizer, max_length, stride):
     )
     sample_map = inputs.pop("overflow_to_sample_mapping")
     inputs["example_id"] = [examples["id"][i] for i in sample_map]
+    # Trainer (transformers >= 5) only invokes compute_metrics when the eval
+    # batch carries labels. The model's label_names are inferred as
+    # ("start_positions", "end_positions"), so provide dummy zero labels for
+    # evaluation. They are never used by compute_metrics (EM/F1 is computed
+    # from the gold answers via eval_examples), but their presence is required
+    # to trigger the callback.
+    inputs["start_positions"] = [0] * len(sample_map)
+    inputs["end_positions"] = [0] * len(sample_map)
     return inputs
 
 
@@ -516,10 +524,13 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             batched=True,
         )
         eval_features = [dict(f) for f in eval_mapped]
-        # Trainer eval dataset must contain only tensor-friendly columns; the
-        # full feature list is used by compute_metrics for post-processing.
+        # Trainer eval dataset must contain only tensor-friendly columns plus
+        # the label columns required to trigger compute_metrics; the full
+        # feature list (with example_id/offset_mapping) is kept separately in
+        # eval_features for post-processing.
         eval_feat_ds = eval_mapped.remove_columns(
-            [c for c in eval_mapped.column_names if c not in {"input_ids", "attention_mask"}]
+            [c for c in eval_mapped.column_names
+             if c not in {"input_ids", "attention_mask", "start_positions", "end_positions"}]
         )
 
         training_args = TrainingArguments(
