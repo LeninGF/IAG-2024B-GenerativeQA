@@ -157,6 +157,27 @@ def set_cuda_visible_devices(args) -> None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
 
+def init_distributed() -> None:
+    """Initialize torch.distributed when launched by torchrun (DDP).
+
+    Must be called after CUDA_VISIBLE_DEVICES is set and before any rank-aware
+    logic runs; otherwise every process would think it is rank 0.
+    """
+    if "LOCAL_RANK" in os.environ or "RANK" in os.environ:
+        import torch.distributed as dist
+
+        if not dist.is_initialized():
+            dist.init_process_group(backend="nccl")
+
+
+def destroy_distributed() -> None:
+    """Destroy the torch.distributed process group if it was initialized."""
+    import torch.distributed as dist
+
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+
 # ---------------------------------------------------------------------------
 # Plan printing (no torch import needed)
 # ---------------------------------------------------------------------------
@@ -518,6 +539,19 @@ def write_metrics(exp_dir, model_id, dataset, mode, metrics, kind_metrics, gold_
 
 
 def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
+    # Heavy imports after CUDA_VISIBLE_DEVICES is set (in main).
+    import torch
+    from datasets import Dataset
+    from transformers import (
+        AutoModelForQuestionAnswering,
+        AutoTokenizer,
+        DefaultDataCollator,
+        Trainer,
+        TrainingArguments,
+    )
+
+    is_main = (not torch.distributed.is_initialized()) or (torch.distributed.get_rank() == 0)
+
     exp_dir = os.path.join(output_root, sanitize_model(model_id), dataset, mode)
     os.makedirs(exp_dir, exist_ok=True)
 
@@ -534,29 +568,18 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         "grad_accum": args.grad_accum, "fp16": args.fp16,
         "early_stopping_patience": args.early_stopping_patience,
     }
-    with open(os.path.join(exp_dir, "config.json"), "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-
-    # Heavy imports after CUDA_VISIBLE_DEVICES is set (in main).
-    import torch
-    from datasets import Dataset
-    from transformers import (
-        AutoModelForQuestionAnswering,
-        AutoTokenizer,
-        DefaultDataCollator,
-        Trainer,
-        TrainingArguments,
-    )
-
-    is_main = (not torch.distributed.is_initialized()) or (torch.distributed.get_rank() == 0)
+    if is_main:
+        with open(os.path.join(exp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
 
     if args.data_dir or args.hf_dataset:
         train, dev, test = load_prepared_splits(args, qa_utils)
     else:
         train, dev, test = load_experiment_splits(args, qa_utils, dataset)
     gold = qa_utils.build_gold_dataset(args.gold_audit) if os.path.exists(args.gold_audit) else []
-    print(f"[{model_id} | {dataset} | {mode}] train={len(train)} dev={len(dev)} "
-          f"test={len(test)} gold={len(gold)}")
+    if is_main:
+        print(f"[{model_id} | {dataset} | {mode}] train={len(train)} dev={len(dev)} "
+              f"test={len(test)} gold={len(gold)}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
@@ -704,12 +727,14 @@ def main():
             raise SystemExit("No modes to run")
         # Set GPU before importing torch/transformers.
         set_cuda_visible_devices(args)
+        init_distributed()
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import qa_dataset_utils as qa_utils
         for model in models:
             for dataset in datasets:
                 for mode in modes:
                     run_one_experiment(args, model, dataset, mode, args.output_dir, qa_utils)
+        destroy_distributed()
         return
 
     if not args.model or not args.dataset:
@@ -719,6 +744,7 @@ def main():
         raise SystemExit("Both --skip-zero-shot and --skip-fine-tune set; nothing to run")
 
     set_cuda_visible_devices(args)
+    init_distributed()
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import qa_dataset_utils as qa_utils
 
@@ -732,6 +758,7 @@ def main():
 
     for mode in modes:
         run_one_experiment(args, args.model, args.dataset, mode, args.output_dir, qa_utils)
+    destroy_distributed()
 
 
 if __name__ == "__main__":

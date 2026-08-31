@@ -128,7 +128,7 @@ launch_experiment() {
   local mode="$3"
   local gpu="$4"
   local tag
-  tag=$(echo "$model" | tr '/' '_')
+  tag="${model//\//__}"
   local log="$OUT_DIR/${tag}__${dataset}__${mode}.log"
 
   local cmd="python scripts/run_qa_ablation.py --model ${model} --dataset ${dataset} --mode ${mode} --gpu ${gpu} --output-dir ${OUT_DIR}"

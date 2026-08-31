@@ -53,7 +53,7 @@ if [[ -n "$DATA_DIR" && -n "$HF_DATASET" ]]; then
   exit 1
 fi
 
-TAG=$(echo "$MODEL" | tr '/' '_')
+TAG="${MODEL//\//__}"
 
 # If --gpus has more than one id, use the multi-GPU torchrun wrapper.
 MULTI_GPUS=""
