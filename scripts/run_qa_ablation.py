@@ -229,7 +229,14 @@ def load_prepared_splits(args, qa_utils):
         test = [_normalize_hf_row(dict(r), "test", qa_utils) for r in ds["test"]]
 
     if args.limit_contexts is not None:
-        all_ids = sorted({r["context_id"] for r in train})
+        # Prepared splits are context-disjoint, so the first N contexts must be
+        # taken from the union of all splits; otherwise dev/test become empty
+        # (they share no context_ids with train).
+        all_ids = sorted(
+            {r["context_id"] for r in train}
+            | {r["context_id"] for r in dev}
+            | {r["context_id"] for r in test}
+        )
         keep = set(all_ids[: max(0, args.limit_contexts)])
         train = [r for r in train if r["context_id"] in keep]
         dev = [r for r in dev if r["context_id"] in keep]
