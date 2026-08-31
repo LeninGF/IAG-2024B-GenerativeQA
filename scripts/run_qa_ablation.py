@@ -524,7 +524,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
 
         training_args = TrainingArguments(
             output_dir=os.path.join(exp_dir, "checkpoints"),
-            evaluation_strategy="epoch",
+            eval_strategy="epoch",
             save_strategy="epoch",
             learning_rate=args.lr,
             per_device_train_batch_size=args.per_device_train_batch_size,
@@ -533,7 +533,6 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             num_train_epochs=args.epochs,
             weight_decay=args.weight_decay,
             fp16=args.fp16,
-            logging_dir=os.path.join(exp_dir, "logs"),
             logging_strategy="epoch",
             report_to="none",
             load_best_model_at_end=True,
