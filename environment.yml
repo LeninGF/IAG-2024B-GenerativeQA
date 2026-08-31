@@ -16,6 +16,7 @@ dependencies:
       - bitsandbytes
       - datasets
       - huggingface_hub
+      - evaluate
       - pydantic
       - python-dotenv
       - outlines[transformers]==1.3.3

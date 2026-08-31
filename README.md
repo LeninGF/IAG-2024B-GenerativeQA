@@ -296,3 +296,119 @@ Opciones:
 Se incluyen los archivos ocultos y las carpetas vacías; los originales nunca se
 modifican.
 
+## Preparación del dataset final y experimentos de QA extractivo (zero-shot vs fine-tuning)
+
+Una vez aplicado el QC (`qc_squadv2_datasets.ipynb` → `out_qc_M2/`), los JSONL de
+`out_qc_M2/` ya son el dataset final en formato SQuAD v2 (no requieren más
+filtrado). Los siguientes scripts permiten preparar/subir ese dataset y ejecutar
+las ablaciones del artículo extendido: comparación zero-shot vs fine-tuning,
+ablación por variante de dataset (`merged`, `strict_gemma`, `strict_qwen`),
+ablación de modelos (BETO, MMG BETO, XLM-R base, distilled BETO), métricas por
+tipo de pregunta, métricas SQuAD v2 HasAns/NoAns y evaluación sobre el gold
+audit de 200 filas etiquetadas.
+
+### Preparar y subir el dataset final a Hugging Face
+
+`scripts/prepare_final_dataset.py` no aplica filtros adicionales: valida el
+esquema SQuAD v2, deriva `context_id` del campo `id`, hace un split por contexto
+(train/dev/test, default 80/10/10, seed 42) y opcionalmente sube las tres
+particiones a Hugging Face.
+
+```bash
+# Preparar localmente (por defecto usa out_qc_M2/squadv2_final_merged.jsonl):
+python scripts/prepare_final_dataset.py --output-dir dataset/prepared_m2
+
+# Smoke test con solo 20 contextos:
+python scripts/prepare_final_dataset.py --limit-contexts 20 --output-dir /tmp/prepared_m2
+
+# Preparar y subir a Hugging Face (usa HUGGINGFACE_TOKEN del .env):
+python scripts/prepare_final_dataset.py \
+    --input out_qc_M2/squadv2_final_merged.jsonl \
+    --output-dir dataset/prepared_m2 \
+    --repo-id LeninGF/robos-question-answering-m2 \
+    --push
+```
+
+También sigue disponible el modo `--push-only` de
+`scripts/build_dataset_local_gpu.py` para subir un JSONL sin hacer split:
+
+```bash
+python scripts/build_dataset_local_gpu.py --push-only \
+    --input-file out_qc_M2/squadv2_final_merged.jsonl \
+    --repo-id LeninGF/robos-question-answering-m2
+```
+
+### Ejecutar una ablación (un experimento por proceso)
+
+`scripts/run_qa_ablation.py` está diseñado para ejecutarse de forma
+**independiente por experimento**: una invocación = un `(modelo, dataset, modo)`
+en una GPU. Esto permite lanzar procesos en paralelo, uno por GPU.
+
+```bash
+# Un experimento (fine-tuning) en la GPU 0:
+python scripts/run_qa_ablation.py \
+    --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+    --dataset merged --mode ft --gpu 0 \
+    --output-dir out_experiments/run1
+
+# Smoke test rápido (100 contextos, 1 época):
+python scripts/run_qa_ablation.py \
+    --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+    --dataset merged --mode both --gpu 0 \
+    --limit-contexts 100 --epochs 1 \
+    --output-dir /tmp/qa_smoke
+
+# Imprimir la matriz completa (4 modelos x 3 datasets x zsl/ft) con GPUs round-robin:
+python scripts/run_qa_ablation.py --plan-only --plan-gpus 8 \
+    --output-dir out_experiments/run1
+
+# Ejecutar toda la matriz secuencialmente en una GPU:
+python scripts/run_qa_ablation.py --all --gpu 0 --output-dir out_experiments/run1
+```
+
+Cada experimento escribe sus resultados en
+`out_experiments/<run_id>/<modelo>/<dataset>/<modo>/`: `metrics_summary.csv/json`,
+`metrics_by_question_type.csv`, `gold_audit_metrics.json`, `predictions_test.jsonl`,
+`config.json` y, para fine-tuning, `training_history.csv` +
+`training_curves.png/pdf` (pérdida y EM/F1 por época).
+
+### Lanzador paralelo para la matriz por defecto
+
+`scripts/run_ablation_parallel.sh` lanza la matriz 4×3×2 (24 experimentos) en
+hasta 8 GPUs, con 8 procesos concurrentes por oleada:
+
+```bash
+bash scripts/run_ablation_parallel.sh \
+    --output-dir out_experiments/run1 \
+    --gpus "0 1 2 3 4 5 6 7"
+
+# Ver qué comandos se lanzarían sin ejecutarlos:
+bash scripts/run_ablation_parallel.sh --dry-run --gpus "0 1 2"
+```
+
+Para una matriz personalizada, genera los comandos con `--plan-only` y edítalos
+a tu gusto.
+
+### Utilidades compartidas
+
+`scripts/qa_dataset_utils.py` contiene la lógica común usada por los scripts
+anteriores: carga/validación de JSONL SQuAD v2, derivación de `context_id`,
+split por contexto, mapeo de tipo de pregunta, lectura del gold audit y métricas
+SQuAD v2 locales (EM/F1, HasAns/NoAns). No requiere GPU.
+
+### Reporte de resultados
+
+`experiments_report.ipynb` lee el directorio de salida
+(`out_experiments/<run_id>/`) y genera las tablas/figuras del artículo:
+zero-shot vs fine-tuning, heatmap modelo×dataset, F1 por tipo de pregunta,
+métricas HasAns/NoAns, gold audit y curvas de entrenamiento. Los CSV, LaTeX y
+PNG/PDF se exportan a `out_experiments/<run_id>/report/`. Solo hay que editar la
+variable `OUT_DIR` en la primera celda del notebook.
+
+### Dependencias
+
+`environment.yml` incluye ahora `evaluate` para compatibilidad con el notebook
+original; los scripts nuevos usan una implementación local de las métricas
+SQuAD v2 y las dependencias pesadas (torch, transformers, datasets) se importan
+solo cuando se ejecuta un experimento.
+
