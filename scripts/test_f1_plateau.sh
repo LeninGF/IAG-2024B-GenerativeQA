@@ -26,6 +26,7 @@ DATA_DIR=""
 HF_DATASET="${HF_DATASET:-LeninGF/question-answering-robbery-m2}"
 TOLERANCE=""
 MIN_EPOCHS=""
+LIMIT_CONTEXTS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --hf-dataset) HF_DATASET="$2"; shift 2 ;;
     --tolerance) TOLERANCE="$2"; shift 2 ;;
     --min-epochs) MIN_EPOCHS="$2"; shift 2 ;;
+    --limit-contexts) LIMIT_CONTEXTS="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -54,12 +56,16 @@ echo "Epochs: $EPOCHS"
 echo "GPU: $GPU"
 echo "Output dir: $OUT_DIR"
 if [[ -n "$DATA_DIR" ]]; then echo "Data: $DATA_DIR"; else echo "Data: HF $HF_DATASET"; fi
+if [[ -n "$LIMIT_CONTEXTS" ]]; then echo "Limit contexts: $LIMIT_CONTEXTS (faster test)"; fi
 
 CMD="python scripts/run_qa_ablation.py --model ${MODEL} --dataset merged --mode ft --gpu ${GPU} --output-dir ${OUT_DIR} --epochs ${EPOCHS}"
 if [[ -n "$DATA_DIR" ]]; then
   CMD+=" --data-dir ${DATA_DIR}"
 else
   CMD+=" --hf-dataset ${HF_DATASET}"
+fi
+if [[ -n "$LIMIT_CONTEXTS" ]]; then
+  CMD+=" --limit-contexts ${LIMIT_CONTEXTS}"
 fi
 
 echo "Running: ${CMD}"
