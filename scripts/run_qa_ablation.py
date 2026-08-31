@@ -703,7 +703,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         training_args = TrainingArguments(
             output_dir=os.path.join(exp_dir, "checkpoints"),
             eval_strategy="epoch",
-            save_strategy="epoch",
+            save_strategy="best",
             learning_rate=args.lr,
             per_device_train_batch_size=args.per_device_train_batch_size,
             per_device_eval_batch_size=args.per_device_eval_batch_size,
