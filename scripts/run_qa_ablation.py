@@ -34,7 +34,7 @@ Examples:
     python scripts/run_qa_ablation.py \\
         --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \\
         --dataset merged --mode both --gpu 0 \\
-        --hf-dataset LeninGF/robos-question-answering-m2 --output-dir out_experiments/run1
+        --hf-dataset LeninGF/question-answering-robbery-m2 --output-dir out_experiments/run1
 """
 
 from __future__ import annotations
@@ -144,7 +144,12 @@ def default_output_dir() -> str:
 # ---------------------------------------------------------------------------
 def print_plan(args):
     models = [m.strip() for m in args.models.split(",") if m.strip()]
-    datasets = [d.strip() for d in args.datasets.split(",") if d.strip()]
+    if args.data_dir or args.hf_dataset:
+        # Prepared/HF splits are the final merged dataset; running the same
+        # source under different dataset names would duplicate identical runs.
+        datasets = ["merged"]
+    else:
+        datasets = [d.strip() for d in args.datasets.split(",") if d.strip()]
     modes = ["zsl", "ft"]
     combos = [(m, d, mode) for m in models for d in datasets for mode in modes]
     print(f"# {len(combos)} experiments, round-robin over {args.plan_gpus} GPU(s)")
@@ -165,6 +170,8 @@ def print_plan(args):
         if args.hf_dataset:
             cmd += f"--hf-dataset {args.hf_dataset} "
         cmd += "--fp16" if args.fp16 else "--no-fp16"
+        if args.early_stopping_patience:
+            cmd += f" --early-stopping-patience {args.early_stopping_patience}"
         if args.save_models:
             cmd += " --save-models"
         if args.limit_contexts is not None:
@@ -504,6 +511,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         "per_device_train_batch_size": args.per_device_train_batch_size,
         "per_device_eval_batch_size": args.per_device_eval_batch_size,
         "grad_accum": args.grad_accum, "fp16": args.fp16,
+        "early_stopping_patience": args.early_stopping_patience,
     }
     with open(os.path.join(exp_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)

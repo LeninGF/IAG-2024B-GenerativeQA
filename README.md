@@ -327,7 +327,7 @@ python scripts/prepare_final_dataset.py --limit-contexts 20 --output-dir /tmp/pr
 python scripts/prepare_final_dataset.py \
     --input out_qc_M2/squadv2_final_merged.jsonl \
     --output-dir dataset/prepared_m2 \
-    --repo-id LeninGF/robos-question-answering-m2 \
+    --repo-id LeninGF/question-answering-robbery-m2 \
     --push
 
 # Desactivar la exclusión del gold audit (no recomendado):
@@ -340,7 +340,7 @@ También sigue disponible el modo `--push-only` de
 ```bash
 python scripts/build_dataset_local_gpu.py --push-only \
     --input-file out_qc_M2/squadv2_final_merged.jsonl \
-    --repo-id LeninGF/robos-question-answering-m2
+    --repo-id LeninGF/question-answering-robbery-m2
 ```
 
 ### Ejecutar una ablación (un experimento por proceso)
@@ -380,7 +380,7 @@ python scripts/run_qa_ablation.py \
 python scripts/run_qa_ablation.py \
     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
     --dataset merged --mode both --gpu 0 \
-    --hf-dataset LeninGF/robos-question-answering-m2 --output-dir out_experiments/run1
+    --hf-dataset LeninGF/question-answering-robbery-m2 --output-dir out_experiments/run1
 ```
 
 Cada experimento escribe sus resultados en
@@ -389,22 +389,82 @@ Cada experimento escribe sus resultados en
 `config.json` y, para fine-tuning, `training_history.csv` +
 `training_curves.png/pdf` (pérdida y EM/F1 por época).
 
-### Lanzador paralelo para la matriz por defecto
+### Lanzador paralelo: Opción A vs Opción B
 
-`scripts/run_ablation_parallel.sh` lanza la matriz 4×3×2 (24 experimentos) en
-hasta 8 GPUs, con 8 procesos concurrentes por oleada:
+`scripts/run_ablation_parallel.sh` lanza la matriz en hasta 8 GPUs. Hay dos modos:
+
+- **Opción A (por defecto) — ablación de variantes del dataset**: usa los JSONL
+  de QC en disco (`out_qc_M2/`): `merged`, `strict_gemma` y `strict_qwen`.
+  Matriz 4 modelos × 3 datasets × {zsl, ft} = 24 experimentos. Nota: este camino
+  **no** excluye las filas del gold audit del entrenamiento; usa `test` para las
+  comparaciones principales y trata `gold_audit_metrics` como sanity check con
+  posible fuga.
+- **Opción B — dataset final merged (gold-safe)**: pasa `--data-dir` o
+  `--hf-dataset`; usa los splits preparados (gold audit ya excluido) y solo el
+  dataset `merged` (8 experimentos).
 
 ```bash
+# Opción A (24 experimentos, QC local):
 bash scripts/run_ablation_parallel.sh \
     --output-dir out_experiments/run1 \
     --gpus "0 1 2 3 4 5 6 7"
+
+# Opción B desde Hugging Face (8 experimentos, epochs y early stopping):
+bash scripts/run_ablation_parallel.sh \
+    --output-dir out_experiments/run1 \
+    --gpus "0 1 2 3 4 5 6 7" \
+    --hf-dataset LeninGF/question-answering-robbery-m2 \
+    --epochs 20 \
+    --early-stopping-patience 3
+
+# Opción B desde splits locales preparados:
+bash scripts/run_ablation_parallel.sh \
+    --output-dir out_experiments/run1 \
+    --gpus "0 1 2 3 4 5 6 7" \
+    --data-dir dataset/prepared_m2 \
+    --epochs 20
 
 # Ver qué comandos se lanzarían sin ejecutarlos:
 bash scripts/run_ablation_parallel.sh --dry-run --gpus "0 1 2"
 ```
 
-Para una matriz personalizada, genera los comandos con `--plan-only` y edítalos
-a tu gusto.
+Opciones del lanzador:
+
+- `--output-dir DIR`, `--gpus "0 1 ..."`, `--dry-run`
+- `--epochs N` (por defecto 10 en `run_qa_ablation.py`)
+- `--early-stopping-patience N` (detiene si `eval_f1` no mejora en N evaluaciones)
+- `--data-dir DIR` / `--hf-dataset REPO` (Opción B)
+- `--limit-contexts N` (smoke tests)
+
+Para una matriz personalizada, genera los comandos con `--plan-only` y edítalos:
+
+```bash
+python scripts/run_qa_ablation.py --plan-only --plan-gpus 8 \
+    --hf-dataset LeninGF/question-answering-robbery-m2 \
+    --epochs 20 --early-stopping-patience 3 \
+    --output-dir out_experiments/run1
+```
+
+### Test de meseta de F1 (¿cuántas épocas usar?)
+
+Antes de la corrida completa conviene ver en qué época el F1 de validación se
+estabiliza con un solo modelo (el baseline mrm8488):
+
+```bash
+# Por defecto: 20 épocas, GPU 0, dataset HF LeninGF/question-answering-robbery-m2
+bash scripts/test_f1_plateau.sh
+
+# Con splits locales:
+bash scripts/test_f1_plateau.sh --data-dir dataset/prepared_m2
+
+# Ajustar duración y criterio:
+bash scripts/test_f1_plateau.sh --epochs 30 --gpu 1 --tolerance 0.2 --min-epochs 5
+```
+
+El script entrena un solo modelo (fine-tuning, sin early stopping) y luego llama
+a `scripts/find_f1_plateau.py`, que imprime por época el `eval_f1`, la mejor
+época y la primera época de meseta. Con eso eliges `--epochs` (o
+`--early-stopping-patience 2-3`) para la corrida completa.
 
 ### Utilidades compartidas
 

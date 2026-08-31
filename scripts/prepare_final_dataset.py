@@ -20,7 +20,7 @@ Usage examples:
     python scripts/prepare_final_dataset.py \\
         --input out_qc_M2/squadv2_final_merged.jsonl \\
         --output-dir dataset/prepared_m2 \\
-        --repo-id LeninGF/robos-question-answering-m2 \\
+        --repo-id LeninGF/question-answering-robbery-m2 \\
         --push
 
     # Keep gold-audit rows in the random splits (not recommended):
@@ -47,7 +47,7 @@ from qa_dataset_utils import (
 
 DEFAULT_INPUT = "out_qc_M2/squadv2_final_merged.jsonl"
 DEFAULT_OUTPUT_DIR = "dataset/prepared_m2"
-DEFAULT_REPO_ID = "LeninGF/robos-question-answering-m2"
+DEFAULT_REPO_ID = "LeninGF/question-answering-robbery-m2"
 DEFAULT_GOLD_AUDIT = "out_qc_M2/audit_stratified_sample_labeled_v1.csv"
 
 
