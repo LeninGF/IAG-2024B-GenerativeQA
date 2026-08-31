@@ -720,6 +720,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             greater_is_better=True,
             seed=args.seed,
             save_total_limit=2,
+            save_only_model=True,
         )
         callbacks = []
         if getattr(args, "early_stopping_patience", None):
