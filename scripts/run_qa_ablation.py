@@ -74,7 +74,10 @@ def parse_args():
                    help="M2 dataset variant (required unless --all/--plan-only)")
     p.add_argument("--mode", default="both", choices=["zsl", "ft", "both"],
                    help="zsl = pre-trained only, ft = fine-tune, both = both (default both)")
-    p.add_argument("--gpu", type=int, default=0, help="GPU id used for this process")
+    p.add_argument("--gpu", type=int, default=0, help="GPU id used for this process (single-GPU mode)")
+    p.add_argument("--gpus", default=None,
+                   help="Comma-separated physical GPU ids for a single multi-GPU job, e.g. '4,5,6,7'. "
+                        "Requires launching through torchrun (see scripts/run_ablation_multi_gpu.sh).")
     p.add_argument("--output-dir", default=None,
                    help="Root output directory (default out_experiments/run_<timestamp>)")
 
@@ -137,6 +140,21 @@ def model_short(model: str) -> str:
 
 def default_output_dir() -> str:
     return f"out_experiments/run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+def set_cuda_visible_devices(args) -> None:
+    """Set CUDA_VISIBLE_DEVICES before importing torch.
+
+    Under torchrun (multi-GPU), the wrapper already sets CUDA_VISIBLE_DEVICES
+    and provides LOCAL_RANK; do not override it. Otherwise use --gpus if given
+    (multi-GPU manual launch) or the single --gpu id.
+    """
+    if "LOCAL_RANK" in os.environ or "RANK" in os.environ:
+        return
+    if args.gpus:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +377,10 @@ def predict_examples(model, tokenizer, examples, args, qa_utils):
         batched=True,
     )
     features = [dict(f) for f in feat_ds]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    else:
+        device = torch.device("cpu")
     model.to(device)
     model.eval()
     start_logits, end_logits = [], []
@@ -517,6 +538,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
     # Heavy imports after CUDA_VISIBLE_DEVICES is set (in main).
+    import torch
     from datasets import Dataset
     from transformers import (
         AutoModelForQuestionAnswering,
@@ -525,6 +547,8 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         Trainer,
         TrainingArguments,
     )
+
+    is_main = (not torch.distributed.is_initialized()) or (torch.distributed.get_rank() == 0)
 
     if args.data_dir or args.hf_dataset:
         train, dev, test = load_prepared_splits(args, qa_utils)
@@ -539,7 +563,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
     # Common per-question-kind map for test metrics.
     kind_by_id = {r["id"]: qa_utils.question_kind(r["question"]) for r in test}
 
-    if mode in ("zsl", "both") and not args.skip_zero_shot:
+    if mode in ("zsl", "both") and not args.skip_zero_shot and is_main:
         model = AutoModelForQuestionAnswering.from_pretrained(model_id)
         preds = predict_examples(model, tokenizer, test, args, qa_utils)
         metrics = qa_utils.squad_v2_metrics(preds, test)
@@ -551,7 +575,6 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         write_metrics(exp_dir, model_id, dataset, "zsl", metrics, kind_metrics,
                       gold_metrics, preds, config)
         del model
-        import torch
         torch.cuda.empty_cache()
 
     if mode in ("ft", "both") and not args.skip_fine_tune:
@@ -616,36 +639,36 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         )
         trainer.train()
 
-        log_history = trainer.state.log_history
-        best_epoch = None
-        best_f1 = -1.0
-        for entry in log_history:
-            if "eval_f1" in entry and entry.get("eval_f1", -1.0) > best_f1:
-                best_f1 = entry["eval_f1"]
-                best_epoch = entry.get("epoch")
-        save_training_curves(exp_dir, log_history, best_epoch=best_epoch)
+        if is_main:
+            log_history = trainer.state.log_history
+            best_epoch = None
+            best_f1 = -1.0
+            for entry in log_history:
+                if "eval_f1" in entry and entry.get("eval_f1", -1.0) > best_f1:
+                    best_f1 = entry["eval_f1"]
+                    best_epoch = entry.get("epoch")
+            save_training_curves(exp_dir, log_history, best_epoch=best_epoch)
 
-        # Evaluate the best model (load_best_model_at_end already loaded it).
-        preds = predict_examples(trainer.model, tokenizer, test, args, qa_utils)
-        metrics = qa_utils.squad_v2_metrics(preds, test)
-        kind_metrics = qa_utils.per_question_type_metrics(preds, test, kind_by_id)
-        gold_metrics = None
-        if gold:
-            gold_preds = predict_examples(trainer.model, tokenizer, gold, args, qa_utils)
-            gold_metrics = qa_utils.squad_v2_metrics(gold_preds, gold)
-        write_metrics(exp_dir, model_id, dataset, "ft", metrics, kind_metrics,
-                      gold_metrics, preds, config)
+            # Evaluate the best model (load_best_model_at_end already loaded it).
+            preds = predict_examples(trainer.model, tokenizer, test, args, qa_utils)
+            metrics = qa_utils.squad_v2_metrics(preds, test)
+            kind_metrics = qa_utils.per_question_type_metrics(preds, test, kind_by_id)
+            gold_metrics = None
+            if gold:
+                gold_preds = predict_examples(trainer.model, tokenizer, gold, args, qa_utils)
+                gold_metrics = qa_utils.squad_v2_metrics(gold_preds, gold)
+            write_metrics(exp_dir, model_id, dataset, "ft", metrics, kind_metrics,
+                          gold_metrics, preds, config)
 
-        if not args.save_models:
-            import shutil
-            ckpt_dir = os.path.join(exp_dir, "checkpoints")
-            if os.path.isdir(ckpt_dir):
-                shutil.rmtree(ckpt_dir, ignore_errors=True)
-            log_dir = os.path.join(exp_dir, "logs")
-            if os.path.isdir(log_dir):
-                shutil.rmtree(log_dir, ignore_errors=True)
+            if not args.save_models:
+                import shutil
+                ckpt_dir = os.path.join(exp_dir, "checkpoints")
+                if os.path.isdir(ckpt_dir):
+                    shutil.rmtree(ckpt_dir, ignore_errors=True)
+                log_dir = os.path.join(exp_dir, "logs")
+                if os.path.isdir(log_dir):
+                    shutil.rmtree(log_dir, ignore_errors=True)
 
-        import torch
         torch.cuda.empty_cache()
 
 
@@ -680,7 +703,7 @@ def main():
         if not modes:
             raise SystemExit("No modes to run")
         # Set GPU before importing torch/transformers.
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+        set_cuda_visible_devices(args)
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import qa_dataset_utils as qa_utils
         for model in models:
@@ -695,7 +718,7 @@ def main():
     if args.skip_zero_shot and args.skip_fine_tune:
         raise SystemExit("Both --skip-zero-shot and --skip-fine-tune set; nothing to run")
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+    set_cuda_visible_devices(args)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import qa_dataset_utils as qa_utils
 

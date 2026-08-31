@@ -459,12 +459,32 @@ bash scripts/test_f1_plateau.sh --data-dir dataset/prepared_m2
 
 # Ajustar duración y criterio:
 bash scripts/test_f1_plateau.sh --epochs 30 --gpu 1 --tolerance 0.2 --min-epochs 5
+
+# Acelerar un mismo trabajo con varias GPUs (DDP):
+bash scripts/test_f1_plateau.sh --gpus "4 5 6 7" --epochs 30
 ```
 
 El script entrena un solo modelo (fine-tuning, sin early stopping) y luego llama
 a `scripts/find_f1_plateau.py`, que imprime por época el `eval_f1`, la mejor
 época y la primera época de meseta. Con eso eliges `--epochs` (o
 `--early-stopping-patience 2-3`) para la corrida completa.
+
+Para acelerar un solo trabajo con varias GPUs también puedes usar directamente
+`scripts/run_ablation_multi_gpu.sh` (wrapper de `torchrun`):
+
+```bash
+bash scripts/run_ablation_multi_gpu.sh \
+    --gpus "4 5 6 7" \
+    --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+    --dataset merged --mode ft --epochs 30 \
+    --hf-dataset LeninGF/question-answering-robbery-m2 \
+    --output-dir out_experiments/f1_plateau_4gpu
+```
+
+Nota: el speedup es aproximadamente lineal (4 GPUs ≈ 3–4×, 8 GPUs ≈ 5–7×),
+pero las evaluaciones finales y la escritura de métricas se hacen solo en el
+rank 0. Para muchos experimentos independientes sigue siendo mejor
+`scripts/run_ablation_parallel.sh`.
 
 ### Utilidades compartidas
 

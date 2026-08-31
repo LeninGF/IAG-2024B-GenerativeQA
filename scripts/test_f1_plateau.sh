@@ -14,6 +14,9 @@
 #   # Use local prepared splits instead of HF:
 #   bash scripts/test_f1_plateau.sh --data-dir dataset/prepared_m2
 #
+#   # Use multiple GPUs for the same job (DDP via torchrun):
+#   bash scripts/test_f1_plateau.sh --gpus "4 5 6 7" --epochs 30
+#
 #   # Tune the plateau definition:
 #   bash scripts/test_f1_plateau.sh --tolerance 0.2 --min-epochs 5
 set -euo pipefail
@@ -27,6 +30,7 @@ HF_DATASET="${HF_DATASET:-LeninGF/question-answering-robbery-m2}"
 TOLERANCE=""
 MIN_EPOCHS=""
 LIMIT_CONTEXTS=""
+GPUS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --tolerance) TOLERANCE="$2"; shift 2 ;;
     --min-epochs) MIN_EPOCHS="$2"; shift 2 ;;
     --limit-contexts) LIMIT_CONTEXTS="$2"; shift 2 ;;
+    --gpus) GPUS="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -50,26 +55,52 @@ fi
 
 TAG=$(echo "$MODEL" | tr '/' '_')
 
+# If --gpus has more than one id, use the multi-GPU torchrun wrapper.
+MULTI_GPUS=""
+if [[ -n "$GPUS" ]]; then
+  GPU_LIST=$(echo "$GPUS" | tr ',' ' ')
+  read -r -a GPU_ARR <<< "$GPU_LIST"
+  if [[ ${#GPU_ARR[@]} -gt 1 ]]; then
+    MULTI_GPUS="$GPU_LIST"
+  else
+    GPU="${GPU_ARR[0]}"
+  fi
+fi
+
 echo "=== F1 plateau test ==="
 echo "Model: $MODEL"
 echo "Epochs: $EPOCHS"
-echo "GPU: $GPU"
+if [[ -n "$MULTI_GPUS" ]]; then
+  echo "GPUs: $MULTI_GPUS (DDP)"
+else
+  echo "GPU: $GPU"
+fi
 echo "Output dir: $OUT_DIR"
 if [[ -n "$DATA_DIR" ]]; then echo "Data: $DATA_DIR"; else echo "Data: HF $HF_DATASET"; fi
 if [[ -n "$LIMIT_CONTEXTS" ]]; then echo "Limit contexts: $LIMIT_CONTEXTS (faster test)"; fi
 
-CMD="python scripts/run_qa_ablation.py --model ${MODEL} --dataset merged --mode ft --gpu ${GPU} --output-dir ${OUT_DIR} --epochs ${EPOCHS}"
+DATA_ARGS=()
 if [[ -n "$DATA_DIR" ]]; then
-  CMD+=" --data-dir ${DATA_DIR}"
+  DATA_ARGS+=(--data-dir "$DATA_DIR")
 else
-  CMD+=" --hf-dataset ${HF_DATASET}"
+  DATA_ARGS+=(--hf-dataset "$HF_DATASET")
 fi
 if [[ -n "$LIMIT_CONTEXTS" ]]; then
-  CMD+=" --limit-contexts ${LIMIT_CONTEXTS}"
+  DATA_ARGS+=(--limit-contexts "$LIMIT_CONTEXTS")
 fi
 
-echo "Running: ${CMD}"
-CUDA_VISIBLE_DEVICES="${GPU}" ${CMD}
+if [[ -n "$MULTI_GPUS" ]]; then
+  CMD=(bash scripts/run_ablation_multi_gpu.sh --gpus "$MULTI_GPUS"
+       --model "$MODEL" --dataset merged --mode ft
+       --output-dir "$OUT_DIR" --epochs "$EPOCHS" "${DATA_ARGS[@]}")
+  echo "Running (multi-GPU): ${CMD[*]}"
+  "${CMD[@]}"
+else
+  CMD=(python scripts/run_qa_ablation.py --model "$MODEL" --dataset merged --mode ft
+       --gpu "$GPU" --output-dir "$OUT_DIR" --epochs "$EPOCHS" "${DATA_ARGS[@]}")
+  echo "Running: ${CMD[*]}"
+  CUDA_VISIBLE_DEVICES="$GPU" "${CMD[@]}"
+fi
 
 HISTORY="${OUT_DIR}/${TAG}/merged/ft/training_history.csv"
 if [[ ! -f "$HISTORY" ]]; then
@@ -77,10 +108,10 @@ if [[ ! -f "$HISTORY" ]]; then
   exit 1
 fi
 
-ANALYZE="python scripts/find_f1_plateau.py --history ${HISTORY}"
-if [[ -n "$TOLERANCE" ]]; then ANALYZE+=" --tolerance ${TOLERANCE}"; fi
-if [[ -n "$MIN_EPOCHS" ]]; then ANALYZE+=" --min-epochs ${MIN_EPOCHS}"; fi
+ANALYZE=(python scripts/find_f1_plateau.py --history "$HISTORY")
+if [[ -n "$TOLERANCE" ]]; then ANALYZE+=(--tolerance "$TOLERANCE"); fi
+if [[ -n "$MIN_EPOCHS" ]]; then ANALYZE+=(--min-epochs "$MIN_EPOCHS"); fi
 
 echo ""
 echo "=== Plateau analysis ==="
-${ANALYZE}
+"${ANALYZE[@]}"
