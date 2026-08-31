@@ -445,6 +445,37 @@ python scripts/run_qa_ablation.py --plan-only --plan-gpus 8 \
     --output-dir out_experiments/run1
 ```
 
+### Opción B con varias GPUs por trabajo (DDP)
+
+Si quieres acelerar un solo fine-tuning de la Opción B usando varias GPUs (en
+lugar de un experimento por GPU), usa `scripts/run_option_b_multi_gpu.sh`:
+
+```bash
+# 4 modelos x merged x {zsl, ft}; FT usa todas las GPUs vía torchrun
+bash scripts/run_option_b_multi_gpu.sh \
+    --gpus "0 1 2 3 4 5 6 7" \
+    --epochs 15 \
+    --hf-dataset LeninGF/question-answering-robbery-m2 \
+    --output-dir out_experiments/option_b
+
+# Con splits locales:
+bash scripts/run_option_b_multi_gpu.sh \
+    --gpus "0 1 2 3 4 5 6 7" \
+    --epochs 15 \
+    --data-dir dataset/prepared_m2 \
+    --output-dir out_experiments/option_b
+
+# Solo dos modelos (para repartir en dos terminales):
+bash scripts/run_option_b_multi_gpu.sh --models "mrm8488/...,MMG/..." \
+    --gpus "0 1 2 3" --output-dir out_experiments/option_b
+
+# Ver comandos sin ejecutar:
+bash scripts/run_option_b_multi_gpu.sh --dry-run --gpus "0 1 2 3 4 5 6 7"
+```
+
+Cada fine-tuning usa todas las GPUs indicadas vía `torchrun` (DDP); ZSL corre en
+una sola GPU. El speedup es aproximadamente lineal (4 GPUs ≈ 3–4×, 8 ≈ 5–7×).
+
 ### Test de meseta de F1 (¿cuántas épocas usar?)
 
 Antes de la corrida completa conviene ver en qué época el F1 de validación se
