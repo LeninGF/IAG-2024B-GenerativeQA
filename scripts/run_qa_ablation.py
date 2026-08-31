@@ -164,10 +164,13 @@ def init_distributed() -> None:
     logic runs; otherwise every process would think it is rank 0.
     """
     if "LOCAL_RANK" in os.environ or "RANK" in os.environ:
+        import torch
         import torch.distributed as dist
 
         if not dist.is_initialized():
-            dist.init_process_group(backend="nccl")
+            local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+            torch.cuda.set_device(local_rank)
+            dist.init_process_group(backend="nccl", device_id=local_rank)
 
 
 def destroy_distributed() -> None:
