@@ -47,6 +47,7 @@ HF_DATASET=""
 LIMIT_CONTEXTS=""
 PUSH_MODEL=0
 MODEL_REPO_ID=""
+LR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +65,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --epochs)
       EPOCHS="$2"
+      shift 2
+      ;;
+    --lr)
+      LR="$2"
       shift 2
       ;;
     --early-stopping-patience)
@@ -150,6 +155,9 @@ launch_experiment() {
   local cmd="python scripts/run_qa_ablation.py --model ${model} --dataset ${dataset} --mode ${mode} --gpu ${gpu} --output-dir ${OUT_DIR}"
   if [[ -n "$EPOCHS" ]]; then
     cmd+=" --epochs ${EPOCHS}"
+  fi
+  if [[ -n "$LR" ]]; then
+    cmd+=" --lr ${LR}"
   fi
   if [[ -n "$EARLY_STOPPING" ]]; then
     cmd+=" --early-stopping-patience ${EARLY_STOPPING}"
