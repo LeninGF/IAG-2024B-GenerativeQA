@@ -114,6 +114,10 @@ def parse_args():
 
     p.add_argument("--save-models", action="store_true",
                    help="Keep fine-tuned checkpoints on disk (default: only best model artifacts)")
+    p.add_argument("--early-stopping-patience", type=int, default=None,
+                   help="Stop training if eval_f1 does not improve for N evaluations (default: disabled)")
+    p.add_argument("--check-splits", action="store_true",
+                   help="Load prepared splits + gold audit, verify no gold-audit leakage, and exit")
     p.add_argument("--skip-zero-shot", action="store_true")
     p.add_argument("--skip-fine-tune", action="store_true")
     args = p.parse_args()
@@ -244,18 +248,28 @@ def load_prepared_splits(args, qa_utils):
     return train, dev, test
 
 
-def make_train_features(examples, tokenizer, max_length, stride):
-    inputs = tokenizer(
-        examples["question"],
-        examples["context"],
-        max_length=max_length,
-        truncation="only_second",
-        stride=stride,
-        return_overflowing_tokens=True,
-        return_offsets_mapping=True,
-        padding="max_length",
-    )
-    sample_map = inputs.pop("overflow_to_sample_mapping")
+def check_no_gold_leakage(train, dev, test, gold_records):
+    """Assert no gold-audit (context, question) pairs appear in prepared splits."""
+    gold_keys = {(r["context"], r["question"]) for r in gold_records}
+    if not gold_keys:
+        print("No gold audit rows loaded; skipping leakage check.")
+        return
+    total = 0
+    for name, rows in (("train", train), ("dev", dev), ("test", test)):
+        leaks = [r for r in rows if (r["context"], r["question"]) in gold_keys]
+        total += len(leaks)
+        print(f"{name}: {len(leaks)} gold-audit pairs")
+    if total:
+        raise SystemExit(f"Gold-audit leakage detected: {total} pairs found in prepared splits")
+    print("OK: no gold-audit pairs in train/dev/test")
+
+
+def compute_start_end_positions(examples, sample_map, inputs):
+    """Map gold char spans to token start/end positions for one tokenized batch.
+
+    Shared by train and eval feature builders so the validation loss is computed
+    against the same real reference spans used for EM/F1.
+    """
     start_positions, end_positions = [], []
     for i, sample_idx in enumerate(sample_map):
         if examples["is_impossible"][sample_idx]:
@@ -281,6 +295,22 @@ def make_train_features(examples, tokenizer, max_length, stride):
         while end_idx >= context_start and offsets[end_idx][1] >= end_char:
             end_idx -= 1
         end_positions.append(end_idx + 1)
+    return start_positions, end_positions
+
+
+def make_train_features(examples, tokenizer, max_length, stride):
+    inputs = tokenizer(
+        examples["question"],
+        examples["context"],
+        max_length=max_length,
+        truncation="only_second",
+        stride=stride,
+        return_overflowing_tokens=True,
+        return_offsets_mapping=True,
+        padding="max_length",
+    )
+    sample_map = inputs.pop("overflow_to_sample_mapping")
+    start_positions, end_positions = compute_start_end_positions(examples, sample_map, inputs)
     inputs["start_positions"] = start_positions
     inputs["end_positions"] = end_positions
     # Offsets are not needed for training; removing them keeps the collator
@@ -302,14 +332,12 @@ def make_eval_features(examples, tokenizer, max_length, stride):
     )
     sample_map = inputs.pop("overflow_to_sample_mapping")
     inputs["example_id"] = [examples["id"][i] for i in sample_map]
-    # Trainer (transformers >= 5) only invokes compute_metrics when the eval
-    # batch carries labels. The model's label_names are inferred as
-    # ("start_positions", "end_positions"), so provide dummy zero labels for
-    # evaluation. They are never used by compute_metrics (EM/F1 is computed
-    # from the gold answers via eval_examples), but their presence is required
-    # to trigger the callback.
-    inputs["start_positions"] = [0] * len(sample_map)
-    inputs["end_positions"] = [0] * len(sample_map)
+    # Real reference spans (same as training) make eval_loss meaningful, while
+    # still satisfying transformers 5's requirement that the eval batch carries
+    # label columns so compute_metrics is invoked.
+    start_positions, end_positions = compute_start_end_positions(examples, sample_map, inputs)
+    inputs["start_positions"] = start_positions
+    inputs["end_positions"] = end_positions
     return inputs
 
 
@@ -560,6 +588,14 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             seed=args.seed,
             save_total_limit=2,
         )
+        callbacks = []
+        if getattr(args, "early_stopping_patience", None):
+            from transformers import EarlyStoppingCallback
+            callbacks.append(EarlyStoppingCallback(
+                early_stopping_patience=args.early_stopping_patience,
+                early_stopping_threshold=0.0,
+            ))
+
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -568,6 +604,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             processing_class=tokenizer,
             data_collator=DefaultDataCollator(),
             compute_metrics=make_compute_metrics(dev, eval_features, qa_utils),
+            callbacks=callbacks,
         )
         trainer.train()
 
@@ -610,6 +647,16 @@ def main():
 
     if args.plan_only:
         print_plan(args)
+        return
+
+    if args.check_splits:
+        if not args.data_dir and not args.hf_dataset:
+            raise SystemExit("--check-splits requires --data-dir or --hf-dataset")
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import qa_dataset_utils as qa_utils
+        train, dev, test = load_prepared_splits(args, qa_utils)
+        gold = qa_utils.build_gold_dataset(args.gold_audit) if os.path.exists(args.gold_audit) else []
+        check_no_gold_leakage(train, dev, test, gold)
         return
 
     if args.all:
