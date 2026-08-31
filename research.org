@@ -403,3 +403,53 @@ Demo script: `scripts/qa_demo.py` loads a saved/pushed model, samples a random
 `(context, question)` row from a dataset, and prints the prediction:
    python scripts/qa_demo.py --model-dir <exp_dir>/model \
      --hf-dataset LeninGF/question-answering-robbery-m2
+
+** 2026-08-31 late: corrected plateau results and next experiments
+
+Corrected F1 plateau (`out_experiments/f1_plateau_m1`, 3000 contexts, lr 2e-5,
+no early stopping, 20 epochs):
+- Best dev `eval_f1` = 0.734 at epoch 4; `eval_loss` then climbs 1.04 -> 1.70
+  while `train_loss` keeps dropping -> clear overfitting after epoch 4.
+- Final test metrics: exact=0.541, f1=0.727, HasAns_f1=0.708, NoAns_f1=0.780;
+  gold audit: exact=0.365, f1=0.593.
+- The paper (ica9637.pdf) reported F1=82.9/EM=55.7 on the original all-answerable
+  4,572-sample dataset; M2 numbers are not directly comparable (different
+  dataset, ~27% unanswerable, context-level split, QC filtering). For reporting,
+  show F1 + HasAns/NoAns breakdown and state the dataset differences.
+
+Decisions:
+- Overfitting assessment stays on the train/eval loss curves + early stopping
+  on `eval_f1`; no train EM/F1 curves for now (extra compute, little extra
+  signal beyond the loss gap).
+- Batch size is not the bottleneck: A16 GPUs at ~60% VRAM with batch 32 and
+  grad_accum 2 (effective 64). No batch change planned unless wall-clock matters.
+- `run_ablation_multi_gpu.sh` forwards `--lr` directly (e.g. `--lr 1e-5`);
+  no hardcoding needed.
+
+Next commands to run (in order):
+1. Full M2 run with early stopping (headline M2 result):
+
+   #+begin_src bash
+   MASTER_PORT=29502 bash scripts/run_ablation_multi_gpu.sh \
+     --gpus "0 1 2 3 4 5 6 7" \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode ft \
+     --hf-dataset LeninGF/question-answering-robbery-m2 \
+     --epochs 8 --early-stopping-patience 2 \
+     --output-dir out_experiments/m2_beto_es2
+   #+end_src
+
+2. Paper replication (legacy schema, row split, paper hyperparameters) to
+   isolate dataset vs methodology:
+
+   #+begin_src bash
+   python scripts/run_qa_ablation.py \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode ft --gpu 0 \
+     --hf-dataset LeninGF/robos-question-answering \
+     --hf-schema legacy --split-mode row \
+     --epochs 10 --lr 2e-5 \
+     --per-device-train-batch-size 64 --per-device-eval-batch-size 64 \
+     --weight-decay 0.01 --fp16 \
+     --output-dir out_experiments/paper_replication
+   #+end_src
