@@ -688,7 +688,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         )
         eval_mapped = dev_ds.map(
             lambda b: make_eval_features(b, tokenizer, args.max_length, args.stride),
-            batched=True,
+            batched=True, remove_columns=dev_ds.column_names,
         )
         eval_features = [dict(f) for f in eval_mapped]
         # Trainer eval dataset must contain only tensor-friendly columns plus

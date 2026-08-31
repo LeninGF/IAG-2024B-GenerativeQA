@@ -322,15 +322,29 @@ def build_gold_dataset(csv_path: str) -> List[dict]:
 # SQuAD v2 metrics (official EM/F1 definitions, local implementation)
 # ---------------------------------------------------------------------------
 def _tokenize_for_metric(text: str) -> List[str]:
-    return normalize_text(text).split()
+    """Official SQuAD v2 / HF evaluate-style normalization for EM/F1."""
+    if text is None:
+        return []
+    return normalize_answer_official(text).split()
+
+
+def normalize_answer_official(s: Optional[str]) -> str:
+    """Lowercase, remove punctuation and collapse whitespace (like evaluate/squad_v2)."""
+    import string
+
+    if s is None:
+        return ""
+    text = str(s).lower()
+    text = "".join(ch for ch in text if ch not in string.punctuation)
+    return " ".join(text.split())
 
 
 def _compute_f1(pred_tokens: List[str], gold_tokens: List[str]) -> float:
     if not pred_tokens or not gold_tokens:
         return 0.0
-    common = 0
-    for tok in pred_tokens:
-        common += min(pred_tokens.count(tok), gold_tokens.count(tok))
+    from collections import Counter
+
+    common = sum((Counter(pred_tokens) & Counter(gold_tokens)).values())
     if common == 0:
         return 0.0
     precision = common / len(pred_tokens)
@@ -481,7 +495,9 @@ def postprocess_qa_predictions(
 
         # Aggregate the best span scores across windows, and take the minimum
         # null score (i.e. the strongest evidence that an answer exists).
-        best_scores: Dict[Tuple[int, int], float] = {}
+        # Key candidates by (feature_idx, start, end) so that text is always
+        # reconstructed from the same window that produced the score.
+        best_scores: Dict[Tuple[int, int, int], float] = {}
         min_null_score = float("inf")
         for feat_idx in feat_idxs:
             offsets = features[feat_idx]["offset_mapping"]
@@ -503,26 +519,22 @@ def postprocess_qa_predictions(
                     if offsets[end][0] == 0 and offsets[end][1] == 0:
                         continue
                     score = float(sl[start] + el[end])
-                    best_scores[(int(start), int(end))] = max(
-                        best_scores.get((int(start), int(end)), float("-inf")), score
-                    )
+                    key = (int(feat_idx), int(start), int(end))
+                    best_scores[key] = max(best_scores.get(key, float("-inf")), score)
 
         best_text = ""
         best_score = float("-inf")
-        for (start, end), score in best_scores.items():
+        for (feat_idx, start, end), score in best_scores.items():
             if score > best_score:
-                # Reconstruct text from any feature that produced this span.
-                for feat_idx in feat_idxs:
-                    offsets = features[feat_idx]["offset_mapping"]
-                    if start < len(offsets) and end < len(offsets):
-                        span = offsets[start][1] - offsets[start][0]
-                        if span > 0:
-                            context = example_by_id[ex_id]["context"]
-                            text = context[offsets[start][0] : offsets[end][1]]
-                            if text.strip():
-                                best_text = text
-                                best_score = score
-                                break
+                offsets = features[feat_idx]["offset_mapping"]
+                if start < len(offsets) and end < len(offsets):
+                    span = offsets[start][1] - offsets[start][0]
+                    if span > 0:
+                        context = example_by_id[ex_id]["context"]
+                        text = context[offsets[start][0] : offsets[end][1]]
+                        if text.strip():
+                            best_text = text
+                            best_score = score
         # SQuAD v2 official convention: no_answer_probability is the null score
         # minus the best non-null span score. A threshold of 0.0 then predicts
         # "no answer" only when the null hypothesis scores higher than the best
