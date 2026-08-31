@@ -31,6 +31,12 @@
 #   bash scripts/run_ablation_parallel.sh --dry-run --gpus "0 1"
 set -euo pipefail
 
+# Ensure each Python job finds the conda env's newer libstdc++ (CXXABI_1.3.15)
+# instead of the older system library, which breaks importing transformers.
+if [[ -n "${CONDA_PREFIX:-}" ]]; then
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+fi
+
 OUT_DIR="${OUT_DIR:-out_experiments/run_$(date +%Y%m%d_%H%M%S)}"
 GPUS="${GPUS:-0 1 2 3 4 5 6 7}"
 DRY_RUN=0

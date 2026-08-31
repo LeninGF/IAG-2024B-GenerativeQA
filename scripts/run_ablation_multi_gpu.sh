@@ -16,6 +16,12 @@
 # All arguments except --gpus are passed through to scripts/run_qa_ablation.py.
 set -euo pipefail
 
+# Ensure torchrun children find the conda env's newer libstdc++ (CXXABI_1.3.15)
+# instead of the older system library, which breaks importing transformers.
+if [[ -n "${CONDA_PREFIX:-}" ]]; then
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+fi
+
 GPUS=""
 MASTER_PORT="${MASTER_PORT:-29500}"
 PASSTHROUGH=()

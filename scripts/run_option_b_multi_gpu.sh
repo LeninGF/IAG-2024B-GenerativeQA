@@ -28,6 +28,12 @@
 #   bash scripts/run_option_b_multi_gpu.sh --dry-run --gpus "0 1 2 3 4 5 6 7"
 set -euo pipefail
 
+# Ensure ZSL python and torchrun FT children find the conda env's newer
+# libstdc++ (CXXABI_1.3.15) instead of the older system library.
+if [[ -n "${CONDA_PREFIX:-}" ]]; then
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+fi
+
 DEFAULT_MODELS=(
   "mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es"
   "MMG/bert-base-spanish-wwm-cased-finetuned-squad2-es"

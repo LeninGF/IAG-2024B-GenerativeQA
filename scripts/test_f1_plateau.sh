@@ -21,6 +21,12 @@
 #   bash scripts/test_f1_plateau.sh --tolerance 0.2 --min-epochs 5
 set -euo pipefail
 
+# Ensure SciPy finds the conda env's newer libstdc++ (CXXABI_1.3.15) instead of
+# the older system library, which breaks importing transformers/Trainer.
+if [[ -n "${CONDA_PREFIX:-}" ]]; then
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+fi
+
 MODEL="${MODEL:-mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es}"
 EPOCHS="${EPOCHS:-20}"
 GPU="${GPU:-0}"
