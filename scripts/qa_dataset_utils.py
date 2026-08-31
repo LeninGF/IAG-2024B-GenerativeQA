@@ -56,7 +56,7 @@ def question_kind(question: str) -> str:
         return "fecha"
     if "valor" in q or "cuanto" in q or "cuánto" in q:
         return "valor"
-    if "lugar" in q or "dónde" in q or "donde" in q:
+    if "lugar" in q or "dónde" in q or "donde" in q or "dirección" in q or "direccion" in q or "calles" in q:
         return "lugar"
     if "objeto" in q or "robado" in q or "robaron" in q or "sustraid" in q or "sustraíd" in q:
         return "objetos"
@@ -149,14 +149,22 @@ def validate_squad2_record(record: dict) -> List[str]:
     return errors
 
 
-def load_squad2_variant(path: str, name: str) -> List[dict]:
-    """Load a QC SQuAD v2 JSONL and add ``context_id`` to each record."""
+def load_squad2_variant(path: str, name: str, strict: bool = True) -> List[dict]:
+    """Load a QC SQuAD v2 JSONL and add ``context_id`` to each record.
+
+    When ``strict=True`` (default), schema/offset problems raise an error.
+    When ``strict=False``, problematic records are kept and their errors are
+    stored in ``_schema_errors`` so callers can analyse readiness without
+    aborting (used by the exploration notebook).
+    """
     records = []
     for raw in load_jsonl(path):
         rec = dict(raw)
         errors = validate_squad2_record(rec)
         if errors:
-            raise ValueError(f"Invalid SQuAD v2 record in {name} ({path}): {errors} :: {rec}")
+            if strict:
+                raise ValueError(f"Invalid SQuAD v2 record in {name} ({path}): {errors} :: {rec}")
+            rec["_schema_errors"] = errors
         rec["context_id"] = derive_context_id(rec)
         rec["is_impossible"] = _normalize_bool(rec["is_impossible"])
         rec["_source"] = name

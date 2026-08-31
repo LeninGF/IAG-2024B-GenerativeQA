@@ -93,6 +93,18 @@ def main():
         for r in rows:
             r.pop("_source", None)
 
+    # SQuAD v2 readiness summary (informative; validation already happened in
+    # load_squad2_variant, these counts are for the final written splits).
+    all_split = train + dev + test
+    imp_with_ans = sum(1 for r in all_split if r["is_impossible"] and (r["answers"]["text"] or r["answers"]["answer_start"]))
+    ans_without_ans = sum(1 for r in all_split if not r["is_impossible"] and not r["answers"]["text"])
+    bad_offsets = sum(
+        1 for r in all_split
+        if not r["is_impossible"] and not r["context"].startswith(r["answers"]["text"][0], r["answers"]["answer_start"][0])
+    )
+    print(f"SQuAD v2 readiness: {len(all_split)} rows | impossible_with_answers={imp_with_ans} | "
+          f"answerable_without_answers={ans_without_ans} | invalid_offsets={bad_offsets}")
+
     paths = {
         "train": os.path.join(output_dir, "train.jsonl"),
         "dev": os.path.join(output_dir, "dev.jsonl"),
