@@ -645,9 +645,12 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         callbacks = []
         if getattr(args, "early_stopping_patience", None):
             from transformers import EarlyStoppingCallback
+            # Monitors eval_f1 (metric_for_best_model above). Only improvements
+            # greater than 0.0005 F1 reset the patience counter, so tiny noise
+            # does not prevent early stopping.
             callbacks.append(EarlyStoppingCallback(
                 early_stopping_patience=args.early_stopping_patience,
-                early_stopping_threshold=0.0,
+                early_stopping_threshold=0.0005,
             ))
 
         trainer = Trainer(
