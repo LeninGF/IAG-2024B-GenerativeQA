@@ -535,6 +535,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             fp16=args.fp16,
             logging_strategy="epoch",
             report_to="none",
+            remove_unused_columns=False,
             load_best_model_at_end=True,
             metric_for_best_model="eval_f1",
             greater_is_better=True,
