@@ -103,6 +103,13 @@ def parse_args():
                    help="Use prepared local splits train.jsonl/dev.jsonl/test.jsonl from this directory")
     p.add_argument("--hf-dataset", default=None,
                    help="Load prepared splits from a Hugging Face dataset repo (train/validation/test)")
+    p.add_argument("--hf-schema", choices=["auto", "legacy", "squad2"], default="auto",
+                   help="HF dataset schema: auto-detect, force legacy (paper robos-question-answering), "
+                        "or assume SQuAD v2 (default auto)")
+    p.add_argument("--split-mode", choices=["context", "row"], default="context",
+                   help="How to create splits when a HF dataset lacks validation/test: "
+                        "context = no shared contexts across splits (default); "
+                        "row = random row-level split (paper replication)")
 
     # Training hyperparameters (paper defaults from Table 3)
     p.add_argument("--epochs", type=int, default=10)
@@ -262,6 +269,31 @@ def _normalize_hf_row(row, split_name, qa_utils):
     return rec
 
 
+def _split_hf_rows(rows, args, qa_utils):
+    """Split normalized rows into train/dev/test using ``--split-mode``."""
+    if getattr(args, "split_mode", "context") == "row":
+        import random
+
+        rng = random.Random(args.seed)
+        shuffled = list(rows)
+        rng.shuffle(shuffled)
+        n = len(shuffled)
+        n_test = int(round(n * args.test_size))
+        n_dev = int(round(n * args.dev_size))
+        test = shuffled[:n_test]
+        dev = shuffled[n_test : n_test + n_dev]
+        train = shuffled[n_test + n_dev :]
+    else:
+        train_ids, dev_ids, test_ids = qa_utils.split_by_context(
+            rows, 1.0 - args.dev_size - args.test_size, args.dev_size, args.test_size,
+            seed=args.seed,
+        )
+        train = qa_utils.filter_by_context(rows, set(train_ids))
+        dev = qa_utils.filter_by_context(rows, set(dev_ids))
+        test = qa_utils.filter_by_context(rows, set(test_ids))
+    return train, dev, test
+
+
 def load_prepared_splits(args, qa_utils):
     """Load train/dev/test from a prepared directory or a HF dataset repo.
 
@@ -277,9 +309,44 @@ def load_prepared_splits(args, qa_utils):
         from datasets import load_dataset
 
         ds = load_dataset(args.hf_dataset)
-        train = [_normalize_hf_row(dict(r), "train", qa_utils) for r in ds["train"]]
-        dev = [_normalize_hf_row(dict(r), "validation", qa_utils) for r in ds["validation"]]
-        test = [_normalize_hf_row(dict(r), "test", qa_utils) for r in ds["test"]]
+        schema = getattr(args, "hf_schema", "auto")
+
+        def norm(row):
+            return qa_utils.normalize_hf_squad_row(dict(row), schema)
+
+        if "validation" in ds and "test" in ds:
+            train = [_normalize_hf_row(norm(r), "train", qa_utils) for r in ds["train"]]
+            dev = [_normalize_hf_row(norm(r), "validation", qa_utils) for r in ds["validation"]]
+            test = [_normalize_hf_row(norm(r), "test", qa_utils) for r in ds["test"]]
+        elif "test" in ds and "validation" not in ds:
+            # Provided test split, but no dev: split train into train/dev.
+            train_rows = [norm(r) for r in ds["train"]]
+            test = [_normalize_hf_row(norm(r), "test", qa_utils) for r in ds["test"]]
+            dev_frac = args.dev_size / (1.0 - args.test_size) if args.test_size < 1 else 0.1
+            if getattr(args, "split_mode", "context") == "row":
+                import random
+
+                rng = random.Random(args.seed)
+                shuffled = list(train_rows)
+                rng.shuffle(shuffled)
+                n_dev = int(round(len(shuffled) * dev_frac))
+                dev_rows = shuffled[:n_dev]
+                train_rows = shuffled[n_dev:]
+            else:
+                train_ids, dev_ids, _ = qa_utils.split_by_context(
+                    train_rows, 1.0 - dev_frac, dev_frac, 0.0, seed=args.seed,
+                )
+                dev_rows = qa_utils.filter_by_context(train_rows, set(dev_ids))
+                train_rows = qa_utils.filter_by_context(train_rows, set(train_ids))
+            train = [_normalize_hf_row(r, "train", qa_utils) for r in train_rows]
+            dev = [_normalize_hf_row(r, "dev", qa_utils) for r in dev_rows]
+        else:
+            # Only train (or train+validation without test): create all splits.
+            rows = [norm(r) for r in ds["train"]]
+            train_rows, dev_rows, test_rows = _split_hf_rows(rows, args, qa_utils)
+            train = [_normalize_hf_row(r, "train", qa_utils) for r in train_rows]
+            dev = [_normalize_hf_row(r, "dev", qa_utils) for r in dev_rows]
+            test = [_normalize_hf_row(r, "test", qa_utils) for r in test_rows]
 
     if args.limit_contexts is not None:
         # Prepared splits are context-disjoint, so the first N contexts must be
@@ -427,7 +494,7 @@ def make_compute_metrics(eval_examples, eval_features, qa_utils):
     def compute_metrics(p):
         start_logits, end_logits = p.predictions
         preds = qa_utils.postprocess_qa_predictions(eval_examples, eval_features, (start_logits, end_logits))
-        m = qa_utils.squad_v2_metrics(preds, eval_examples, compute_best=False)
+        m = qa_utils.squad_v2_metrics(preds, eval_examples, compute_best=True)
         return {
             "exact": m["exact"],
             "f1": m["f1"],
@@ -435,6 +502,10 @@ def make_compute_metrics(eval_examples, eval_features, qa_utils):
             "HasAns_f1": m["HasAns_f1"],
             "NoAns_exact": m["NoAns_exact"],
             "NoAns_f1": m["NoAns_f1"],
+            "best_exact": m["best_exact"],
+            "best_exact_thresh": m["best_exact_thresh"],
+            "best_f1": m["best_f1"],
+            "best_f1_thresh": m["best_f1_thresh"],
         }
     return compute_metrics
 
@@ -453,23 +524,17 @@ def save_training_curves(exp_dir, log_history, best_epoch=None):
         if epoch is None:
             continue
         d = per_epoch.setdefault(epoch, {})
-        if "loss" in entry:
-            d["train_loss"] = entry["loss"]
-        if "eval_loss" in entry:
-            d["eval_loss"] = entry["eval_loss"]
-        if "eval_exact" in entry:
-            d["eval_exact"] = entry["eval_exact"]
-        if "eval_f1" in entry:
-            d["eval_f1"] = entry["eval_f1"]
+        for key, value in entry.items():
+            if key == "epoch":
+                continue
+            if key == "loss":
+                d["train_loss"] = value
+            elif key.startswith("eval_"):
+                d[key] = value
     for epoch in sorted(per_epoch):
-        d = per_epoch[epoch]
-        rows.append({
-            "epoch": epoch,
-            "train_loss": d.get("train_loss"),
-            "eval_loss": d.get("eval_loss"),
-            "eval_exact": d.get("eval_exact"),
-            "eval_f1": d.get("eval_f1"),
-        })
+        d = dict(per_epoch[epoch])
+        d["epoch"] = epoch
+        rows.append(d)
     if not rows:
         return
     df = pd.DataFrame(rows)

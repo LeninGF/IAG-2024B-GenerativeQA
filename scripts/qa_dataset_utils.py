@@ -9,6 +9,7 @@ them, so the dataset preparation can be smoke-tested without a GPU.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -117,6 +118,55 @@ def _normalize_bool(value) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"true", "1", "yes"}
+
+
+def normalize_hf_squad_row(row: dict, schema: str = "auto") -> dict:
+    """Normalize a Hugging Face dataset row to the SQuAD v2 schema.
+
+    ``schema`` is one of:
+      - ``auto``: detect legacy rows by the presence of ``answer_text`` /
+        ``impossible_find_answer`` columns (paper ``robos-question-answering``).
+      - ``legacy``: force conversion from the paper's legacy schema.
+      - ``squad2``: assume the row is already SQuAD v2.
+    """
+    rec = dict(row)
+    if schema == "auto":
+        schema = "legacy" if ("answer_text" in rec and "impossible_find_answer" in rec) else "squad2"
+    if schema == "legacy":
+        rec = _legacy_to_squad2(rec)
+    return rec
+
+
+def _legacy_to_squad2(rec: dict) -> dict:
+    """Convert the paper's ``robos-question-answering`` schema to SQuAD v2.
+
+    Legacy fields: ``index``, ``context``, ``question``, ``answer_text``,
+    ``answer_start``, ``answer_end``, ``impossible_find_answer``.
+    """
+    context = str(rec.get("context") or "")
+    question = str(rec.get("question") or "")
+
+    if rec.get("index") is not None:
+        rec["id"] = f"legacy_{rec['index']}"
+    elif rec.get("id"):
+        rec["id"] = str(rec["id"])
+    else:
+        rec["id"] = f"legacy_{hashlib.md5((context + question).encode('utf-8')).hexdigest()[:16]}"
+
+    rec["context"] = context
+    rec["question"] = question
+    rec["is_impossible"] = _normalize_bool(rec.get("impossible_find_answer"))
+    if rec["is_impossible"]:
+        rec["answers"] = {"text": [], "answer_start": []}
+    else:
+        rec["answers"] = {
+            "text": [str(rec.get("answer_text") or "").strip()],
+            "answer_start": [int(rec.get("answer_start") or -1)],
+        }
+
+    if not rec.get("context_id"):
+        rec["context_id"] = f"ctx_{hashlib.md5(context.encode('utf-8')).hexdigest()[:12]}"
+    return rec
 
 
 def validate_squad2_record(record: dict) -> List[str]:

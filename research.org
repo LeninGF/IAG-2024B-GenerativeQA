@@ -1,0 +1,368 @@
+#+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
+#+options: author:t broken-links:nil c:nil creator:nil
+#+options: d:(not "LOGBOOK") date:t e:t email:nil f:t inline:t num:t
+#+options: p:nil pri:nil prop:nil stat:t tags:t tasks:t tex:t
+#+options: timestamp:t title:t toc:t todo:t |:t
+#+title: Research
+#+date: <2026-08-26 Wed>
+#+author: Lenin G. Falconí
+#+email: lenin.falconi@epn.edu.ec
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 29.3 (Org mode 9.6.15)
+#+cite_export:
+
+
+* 2026-08-26
+In [[file:environment.yml]] we need to include: matplotlib and
+seaborn. This could be included to conda install.
+
+I have sucessfully ran the [[file:dataset_build_local_gpu.ipynb]] notebook
+but I have the following quetions:
+
+1. It could be good to create a progress bar
+2. I still do not understand what are those errors when processing
+   some of the texts
+3. I havent added a function to upload the dataset to hugging face
+4. I am not sure how to decide if a sample is not good for
+   training. The problem is that Gemma is writing some intersting
+   information like /no existe informacion/ which is correct when the
+   crime report lacks the information we are looking for in the
+   questions. But, this is flagged with a True for impossible to
+   find. Since the answer text is different from 0 and is logical to
+   the context, I think it is a valid answer. However, qwen in these
+   cases answers with 0 tokens and flags True for impossible. The idea
+   is to exclude cases where there would be a tendency to allucinate
+   or wrong answers.
+
+* 2026-08-27
+
+I have been able to check the correct working of models for single gpu
+qwen2.5-3b and gemma-3-1b. It seems we can create an initial local
+dataset for each of these models. The following is the CLI commands
+used to create the dataset:
+
+#+begin_src shell
+python scripts/build_dataset_local_gpu.py \
+       --model qwen2.5-3b-instruct \
+       --gpu-ids 4 \
+       --output-file ../data/dataset_squadv2/squadv2_qwen2.5-3b.jsonl
+#+end_src
+
+
+And for gemma
+
+#+begin_src shell
+nohup python scripts/build_dataset_local_gpu.py \
+      --model gemma-3-1b-it \
+      --gpu-ids 5 \
+      --output-file ../data/dataset_squadv2/squadv2_gemma-3-1b.jsonl > logs_gemma-3-1b_full.log 2>&1 &
+#+end_src
+
+However the time required to complete each task is around 20 days. I
+have decided to engineer a worker setup using 4 gpus for each model
+and splitting the whole dataset among those workers and then merging
+the final result to obtain a reasonable dataset of 15000 samples which
+is at least 3 times what I used initially in the paper. Of course I
+would need to later check and remove samples that could be wrong.
+
+Consequently the following are the commands used to work in parallel
+
+#+begin_src shell
+nohup bash scripts/run_build_parallel.sh \
+      --model qwen2.5-3b-instruct \
+      --gpus 0,1,2,3 \
+      --use-dataset-sample --sample-size 15000 --sample-seed 42 \
+      --output-file ../data/dataset_squadv2_M1/squadv2_qwen2.5-3b.jsonl \
+      > logs/qwen_dataset.log 2>&1 &
+#+end_src
+* 2026-08-28
+
+Yesterday we commanded to create a dataset to expand the work on
+question answering for robbery reports. However, I noticed that some
+contexts had errors when processing. These errors are more related to
+the JSON format. It seems that the number of max new tokens commanded
+to each of the LLMs to produce was suboptimal. By running
+[[file:long_context_probe.ipynb]] in the Ada server, it seems that it is
+reasonable to set max new tokens to 512. Because of that we will be
+repeating the commands to create the dataset again.
+
+#+begin_src shell
+nohup bash scripts/run_build_parallel.sh --model qwen2.5-3b-instruct \
+      --gpus 0,1,2,3 \
+      --use-dataset-sample --sample-size 20000 \
+      --sample-seed 42 \
+      --max-new-tokens 512 \
+      --output-file ../../data/dataset_squadv2_M2/squadv2_qwen2.5-3b.jsonl > logs/qwen_dataset_28082026.log 2>&1 &
+#+end_src
+
+#+begin_src shell
+nohup bash scripts/run_build_parallel.sh --model gemma-3-1b-it \
+      --gpus 4,5,6,7 \
+      --use-dataset-sample --sample-size 20000 \
+      --sample-seed 42 \
+      --max-new-tokens 512 \
+      --output-file ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl \
+    > logs/gemma_dataset_28082026.log 2>&1 &
+#+end_src
+
+* 2026-08-29
+
+Gemma is taking too much time to complete and it seems it is making
+allucinations. Some of the results I have seen in the logs indicate
+that gemma is trying to fill the max new tokens limit of 512 tokens
+repeating words. Or that I have seen from samples registered in the
+logs where there is an absurd and ilogic repetition of terms. Hence
+the program was modified to try to make a global resume and
+redistribute of the pending contexts to drop from a remaining of 11
+hours to go to just a couple of hours by using all 8 gpus for
+gemma. This is possible because qwen finished already.
+
+For that case and to kill the process it is necessary the following
+code because nvtop has no influence from my user to clear the jobs
+
+#+begin_src shell
+(base) lfalconi@bb1ed1c4f403:~/notebooks/IAG-2024B-GenerativeQA$ ps -ef | grep gemma
+lfalconi   24553   24509  0 05:05 pts/11   00:00:00 python /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/scripts/run_build_parallel.py --model gemma-3-1b-it --gpus 4,5,6,7 --use-dataset-sample --sample-size 20000 --sample-seed 42 --max-new-t
+lfalconi   24556   24553 82 05:05 pts/11   14:09:04 /var/lib/datausers_jupyterhub/lfalconi_storage/miniforge3/envs/pyt-eqa-fge/bin/python /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/scripts/build_dataset_local_gpu.py --model gemma-3-1b-it 
+lfalconi   24557   24553 82 05:05 pts/11   14:05:18 /var/lib/datausers_jupyterhub/lfalconi_storage/miniforge3/envs/pyt-eqa-fge/bin/python /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/scripts/build_dataset_local_gpu.py --model gemma-3-1b-it 
+lfalconi   24558   24553 81 05:05 pts/11   14:04:03 /var/lib/datausers_jupyterhub/lfalconi_storage/miniforge3/envs/pyt-eqa-fge/bin/python /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/scripts/build_dataset_local_gpu.py --model gemma-3-1b-it 
+lfalconi   24559   24553 82 05:05 pts/11   14:07:42 /var/lib/datausers_jupyterhub/lfalconi_storage/miniforge3/envs/pyt-eqa-fge/bin/python /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/scripts/build_dataset_local_gpu.py --model gemma-3-1b-it 
+lfalconi   31475   31449  0 22:15 pts/12   00:00:00 grep --color=auto gemma
+(base) lfalconi@bb1ed1c4f403:~/notebooks/IAG-2024B-GenerativeQA$ kill -15 24553
+(base) lfalconi@bb1ed1c4f403:~/notebooks/IAG-2024B-GenerativeQA$ kill -15 24556
+(base) lfalconi@bb1ed1c4f403:~/notebooks/IAG-2024B-GenerativeQA$ kill -15 24557
+(base) lfalconi@bb1ed1c4f403:~/notebooks/IAG-2024B-GenerativeQA$ kill -15 24558
+(base) lfalconi@bb1ed1c4f403:~/notebooks/IAG-2024B-GenerativeQA$ kill -15 24559
+#+end_src
+
+It is important to notice **how to kill gpu process in Ada Server:**
+~ps -ef | grep gemma~ that helped to find all processes running the
+gemma model which I wanted to kill to run in resume mode using all GPUs.
+
+Then I made a backup copy of current files
+#+begin_src shell
+(base) lfalconi@bb1ed1c4f403:~/data$ cp -rfv dataset_squadv2_M2/* dataset_squadv2_M2_bckup/
+#+end_src
+
+Then I pulled changes of the repository and executed the new
+[[file:scripts/plan_resume_shards.py]] as follows:
+#+begin_src shell
+ python scripts/plan_resume_shards.py \
+	--model gemma-3-1b-it \
+	--output-file ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl \
+	--sample-size 20000 \
+	--sample-seed 42 \
+	--new-gpus 0,1,2,3,4,5,6,7 \
+	--max-new-tokens 512
+#+end_src
+
+It produced the following output:
+#+begin_src shell
+Muestra original reconstruida: 20000 contextos (seed 42)
+../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-0: 3044 contextos completos, 1 parciales limpiados (backup: ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-0.bak_20260829_222800)
+../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-1: 3077 contextos completos, 1 parciales limpiados (backup: ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-1.bak_20260829_222800)
+../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-2: 3110 contextos completos, 1 parciales limpiados (backup: ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-2.bak_20260829_222800)
+../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-3: 3049 contextos completos, 1 parciales limpiados (backup: ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl.worker-3.bak_20260829_222800)
+Total muestra: 20000 | ya completos: 12280 | restantes: 7720
+worker 0 (GPU 0): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_0.json
+worker 1 (GPU 1): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_1.json
+worker 2 (GPU 2): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_2.json
+worker 3 (GPU 3): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_3.json
+worker 4 (GPU 4): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_4.json
+worker 5 (GPU 5): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_5.json
+worker 6 (GPU 6): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_6.json
+worker 7 (GPU 7): 965 contextos -> /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/worker_7.json
+
+Launcher listo: bash /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/dataset/resume_manifests/gemma-3-1b-it_20260829_222800/launch_resume.sh
+Logs de esta corrida se escribirán en: /home/lfalconi/notebooks/IAG-2024B-GenerativeQA/logs/gemma-3-1b-it_resume_20260829_222800
+#+end_src
+
+
+There is a bug in the code since it creates the .sh file to run the 8
+gpu works inside a ~dataset~ folder. This has been acknowledge to be
+corrected in github. However, at the moment I did use the current
+location from root (~/home/lfalconi/notebooks/IAG-2024B-GenerativeQA~).
+
+#+begin_src shell
+nohup bash dataset/resume_manifests/gemma-3-1b-it_20260829_222800/launch_resume.sh > logs/gemma_resume_20260829_222800.log 2>&1 &
+[1] 31789
+#+end_src
+
+And I am watching the progress by:
+#+begin_src shell
+tail -f logs/gemma-3-1b-it_resume_20260829_222800/gemma-3-1b-it_worker_7.log
+#+end_src
+
+Now we are waiting for the dataset to be created and we will deal soon
+with it to improve the models.
+
+to avoid confusion to craft the final dataset the backups that are
+automatically created by the script should be moved. This is something
+to be improved in the code.
+
+The following was performed at ~/home/lfalconi/data/dataset_squadv2_M2~
+#+begin_src shell
+mv squadv2_gemma-3-1b.jsonl.worker-*.bak_* backups_20260829/
+#+end_src
+
+After that we can merge the results of the workers into a final file
+
+#+begin_src shell
+python scripts/build_dataset_local_gpu.py --merge --output-file ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl
+Merge OK: 20000 contextos, 100000 filas -> ../../data/dataset_squadv2_M2/squadv2_gemma-3-1b.jsonl
+#+end_src
+
+* 2026-08-30
+
+Today we consolidated the M2 quality-control and experiment workflow:
+
+- [[file:qc_squadv2_datasets.ipynb]] assessed the two synthetic M2 datasets
+  (Gemma 3 1B and Qwen 2.5 3B, 20k contexts × 5 questions each = 100k rows per
+  model) from [[file:dataset/dataset_squadv2_M2/]]. It recomputed answer
+  offsets, assigned each row a `qc_status` (literal/normalized/no-answer/
+  hallucinated), applied the context-aware semantic heuristic (v2), and produced
+  per-model `strict`/`expanded` SQuAD-v2 JSONL, a merged dataset
+  (`squadv2_final_merged.jsonl`), `uncertain_<model>.csv`, a stratified audit
+  sample ([[file:out_qc_M2/audit_stratified_sample.csv]]), and metrics/figures.
+  Final merged size: 80,726 rows (59,497 answerable / 21,229 unanswerable).
+
+- A GLM-based LLM (reviewer_id=computer-v1) acted as an artificial human
+  reviewer on the stratified audit sample and produced
+  [[file:out_qc_M2/audit_stratified_sample_labeled_v1.csv]] (200 labeled rows,
+  100 per model).
+
+- [[file:audit_report.ipynb]] analyzed the labeled audit: gold accuracy
+  Gemma ≈ 0.57, Qwen ≈ 0.73 (Wilson 95% CI); the v2 heuristic improved
+  precision/recall vs v1; main error types were false_abstention,
+  wrong_time_reference, incomplete_object_list and partial_location; training
+  split recommendation ranked strict_gemma (0.723) > merged (0.699) >
+  strict_qwen (0.676). Full tables/figures: [[file:Reports/audit_glm_v1/]].
+
+- We implemented the experiment/ablation workflow:
+  - [[file:scripts/qa_dataset_utils.py]]: shared SQuAD-v2 loading/validation,
+    `context_id` derivation, context-level splitting, question-kind mapping,
+    gold-audit reader, local EM/F1 metric (overall/HasAns/NoAns) and QA
+    post-processing. Fixed `question_kind` so the address question
+    (¿dirección/calles?) is classified as *place* instead of *other*.
+  - [[file:scripts/prepare_final_dataset.py]]: validates schema, makes
+    context-level train/dev/test (default 80/10/10, seed 42), **excludes the
+    gold-audit (context, question) pairs by default** to avoid leakage, writes
+    `gold_test.jsonl`, and can push train/validation/test/gold_test to HF.
+  - [[file:scripts/run_qa_ablation.py]]: single-experiment CLI
+    (model × dataset × mode) for zero-shot and fine-tuned QA; supports
+    `--data-dir` (prepared local splits) and `--hf-dataset` (HF repo), plus
+    `--plan-only`/`--all`; outputs metrics CSV/JSON, LaTeX, predictions and
+    per-epoch training curves.
+  - [[file:scripts/run_ablation_parallel.sh]]: launches the default
+    4 models × 3 datasets × {zsl, ft} matrix (24 runs) on up to 8 GPUs.
+  - [[file:experiments_report.ipynb]]: renders tables/figures from
+    `out_experiments/<run_id>/` for the paper.
+  Planned default matrix: mrm8488 BETO, MMG BETO, XLM-R base and distilled BETO
+  × {merged, strict_gemma, strict_qwen} × {zsl, ft}, sharing the same 10% dev /
+  10% test context split, with the 200-row gold audit as a secondary test.
+
+- [[file:dataset_xplore_and_upload_M2.ipynb]] (successor of
+  [[file:dataset_xplore_and_upload.ipynb]]) checked SQuAD-v2 readiness of the QC
+  outputs: merged, strict_gemma, strict_qwen and expanded_qwen are ready
+  (0 schema errors, 0 impossible-with-answers, 0 invalid offsets), while
+  expanded_gemma has 68 rows with offsets shifted by a leading space.
+  `is_impossible=True` rows are kept with empty answers (standard SQuAD-v2
+  abstention training), not dropped and not filled with fake answers.
+
+* 2026-08-31 F1 plateau test, metric discussion and next experiments
+
+** F1 plateau test on the M2 dataset
+Ran a plateau experiment on the M2 merged dataset with
+`--limit-contexts 5000 --epochs 50 --lr 2e-5 --max-length 384 --stride 128`,
+model `mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es`.
+
+- `train_loss` decreased monotonically (1.08 -> 0.08) while `eval_loss`
+  increased almost monotonically (1.03 -> 2.24): classic overfitting.
+- Dev `eval_f1` peaked around epoch 34 (~0.437) and then plateaued/declined;
+  `find_f1_plateau.py` suggested epoch 34.
+- Final test metrics: exact=0.365, f1=0.448, HasAns_f1=0.314, NoAns_f1=0.819;
+  gold audit: exact=0.220, f1=0.326.
+- The paper (`ica9637.pdf`) reports F1=82.9 / EM=55.7 on the original
+  all-answerable `LeninGF/robos-question-answering` dataset (4,572 samples).
+  The M2 run is not directly comparable: different dataset (with unanswerable
+  rows), only 5,000 of ~15k contexts, and 50 epochs without early stopping.
+
+Conclusions:
+- More epochs alone will not help; the useful range is ~10-15 with early
+  stopping on `eval_f1` (patience 3, threshold 0.0005).
+- More samples should help (the paper also reports that increasing samples
+  improves fine-tuning).
+- Plain `f1` uses the default no-answer threshold (0.0); `best_f1` is the
+  oracle threshold tuned on the evaluated set. The gap (0.448 -> 0.615 test;
+  0.326 -> 0.624 gold) means the default threshold is poorly calibrated for
+  M2; tune the threshold on dev before reporting test numbers.
+- Class weighting for the ~26% unanswerable rows is not recommended yet:
+  NoAns F1 is already high (0.82) and the weak part is HasAns F1 (0.31).
+
+** Script changes agreed today
+- `training_history.csv` now stores all per-epoch eval keys
+  (`eval_HasAns_*`, `eval_NoAns_*`, `eval_best_*`, thresholds) instead of only
+  `eval_exact`/`eval_f1`.
+- Per-epoch evaluation now computes `best_*` metrics too (`compute_best=True`).
+- New `--hf-schema {auto,legacy,squad2}`: auto-detects the paper's legacy
+  schema (`answer_text`/`answer_start`/`answer_end`/`impossible_find_answer`)
+  and converts it to SQuAD v2.
+- New `--split-mode {context,row}`: `context` (default) keeps contexts disjoint;
+  `row` reproduces the notebook's random row-level split for paper replication.
+- HF datasets with only a `train` split are auto-split into train/dev/test.
+- Metrics remain as fractions (0-1).
+
+** Suggested commands to try
+
+1. M2 improvement run (more contexts + early stopping, multi-GPU):
+
+   #+begin_src bash
+   bash scripts/run_ablation_multi_gpu.sh \
+     --gpus "4 5 6 7" \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode ft \
+     --epochs 20 --early-stopping-patience 3 \
+     --hf-dataset LeninGF/question-answering-robbery-m2 \
+     --limit-contexts 10000 \
+     --output-dir out_experiments/m2_improve_10k
+   #+end_src
+
+2. Paper replication with the original legacy dataset (row split, paper
+   hyperparameters; note: dev/test sizes default to 10/10, so this is an
+   80/10/10 approximation of the paper's 80/20 split):
+
+   #+begin_src bash
+   python scripts/run_qa_ablation.py \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode ft --gpu 0 \
+     --hf-dataset LeninGF/robos-question-answering \
+     --hf-schema legacy --split-mode row \
+     --epochs 10 --lr 2e-5 \
+     --per-device-train-batch-size 64 --per-device-eval-batch-size 64 \
+     --weight-decay 0.01 --fp16 \
+     --output-dir out_experiments/paper_replication
+   #+end_src
+
+3. ZSL baseline on the same paper dataset (for the paper's Table 4 comparison):
+
+   #+begin_src bash
+   python scripts/run_qa_ablation.py \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode zsl --gpu 0 \
+     --hf-dataset LeninGF/robos-question-answering \
+     --hf-schema legacy --split-mode row \
+     --output-dir out_experiments/paper_replication
+   #+end_src
+
+** Launcher caveat (important for the future)
+- `scripts/run_ablation_multi_gpu.sh` forwards all extra flags to
+  `run_qa_ablation.py`, so it already supports `--hf-schema` and `--split-mode`.
+- `scripts/run_option_b_multi_gpu.sh` only forwards a fixed set of options and
+  does **not** forward `--hf-schema` / `--split-mode`; therefore it currently
+  cannot run the old paper dataset (`LeninGF/robos-question-answering`, the
+  legacy schema used in `ica9637.pdf`).
+- Decision (2026-08-31): no change to `run_option_b_multi_gpu.sh` for now; use
+  `run_qa_ablation.py` or `run_ablation_multi_gpu.sh` directly for the paper
+  dataset if/when needed.
