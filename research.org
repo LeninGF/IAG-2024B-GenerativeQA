@@ -453,3 +453,103 @@ Next commands to run (in order):
      --weight-decay 0.01 --fp16 \
      --output-dir out_experiments/paper_replication
    #+end_src
+
+** 2026-08-31 late: contributions of the extended study, inflated-metric report and the threshold fix
+
+*** Contributions of the extended (M2) study relative to =ica9637.pdf=
+The extended study is not an incremental "+F1" over the ICA paper; it turns the
+original proof-of-concept into a rigorous, realistic SQuAD-v2 legal-QA benchmark
+with an auditable synthetic-data pipeline. Concretely:
+
+1. *Larger, more realistic dataset.* ~80,726 rows (59,497 answerable / 21,229
+   unanswerable, ~27% no-answer) vs the paper's 4,572 all-answerable pairs. This
+   makes the task a genuine SQuAD-v2 problem *with abstention*, not just span
+   extraction on guaranteed-answerable contexts.
+2. *Two synthetic generators, compared and audited.* Gemma-3-1B and Qwen-2.5-3B,
+   each 20k contexts × 5 questions, quality-controlled into
+   =strict_gemma= / =strict_qwen= / =merged=. LLM-as-judge gold audit
+   (=computer-v1=/GLM, 200 rows, Wilson 95% CI): Qwen gold ≈ 0.73 > Gemma ≈ 0.57.
+3. *Leakage-free evaluation protocol.* Context-level 80/10/10 split (contexts
+   disjoint across train/dev/test) with the 200-row gold audit held out, fixing
+   the original random row-level split that shared contexts and selected the
+   model on the test set.
+4. *Multi-model ablation.* Four encoders (mrm8488 BETO, MMG BETO, XLM-R base,
+   distilled BETO) × dataset variants × {ZSL, FT}, all on the identical split.
+5. *Fine-grained error analysis.* EM/F1 plus HasAns/NoAns breakdown and
+   per-question-type metrics (date/time/place/objects/value), localizing the
+   weakness to =place= (HasAns F1 ≈ 0.57) and =objects= (≈ 0.47).
+6. *Corrected evaluation code.* Window-aware SQuAD-v2 post-processing fixes the
+   overflow/duplicate-counting and =start<=end= bugs present in the original
+   notebook, and adds no-answer threshold calibration.
+7. *A reusable QC + audit methodology* for GAI-synthesized datasets (automated
+   quality control + artificial-reviewer audit with confidence intervals and an
+   error typology), applicable beyond this domain.
+
+*** Comparison: original paper vs M2 extended study
+
+| Dimension          | Original (=ica9637.pdf=)                | M2 extended study                                          |
+|--------------------+-----------------------------------------+------------------------------------------------------------|
+| Dataset size       | 4,572 QA pairs                          | 80,726 rows (59,497 ans / 21,229 no-ans)                   |
+| Answerability      | all answerable (impossible dropped)     | ~27% unanswerable (real SQuAD v2 abstention)               |
+| Generator(s)       | Llama-3-8B-Instruct                     | Gemma-3-1B + Qwen-2.5-3B (compared and audited)            |
+| Train/test split   | random row-level 80/20, *no dev set*    | context-level 80/10/10, dev+test, gold audit excluded      |
+| Model selection    | on the *test* set (leakage)             | on held-out dev                                            |
+| Models evaluated   | 1 (mrm8488 BETO)                        | 4 (mrm8488 BETO, MMG BETO, XLM-R base, distilled BETO)     |
+| Evaluation depth   | aggregate EM/F1                         | EM/F1 + HasAns/NoAns + per-question-type + threshold calib |
+| Quality control    | manual verification (deferred)          | QC pipeline + LLM-as-judge audit (200 rows, Wilson CI)     |
+| Metric code        | overflow/duplicate + start<=end bugs    | window-aware SQuAD-v2 post-processing (fixed)              |
+| Headline F1        | 82.88 (inflated, see below)             | ~0.73 dev / ~0.59 gold (realistic, harder task)            |
+
+*** Report on the inflated metric of =ica9637.pdf=
+The paper's headline F1 = 82.88 (EM = 55.74), improving only +1.18 F1 over the
+zero-shot baseline (F1 = 81.70), is *optimistically inflated* by the evaluation
+setup, not by the model quality. Three compounding reasons:
+
+1. *All-answerable test set.* The ~3,000 =impossible_find_answer=True= cases were
+   dropped, leaving only guaranteed-answerable contexts. There is no abstention
+   to get wrong, so no-answer errors cannot lower the score (note
+   =best_f1_thresh = 0.0= in the paper's Table 4). Our M2 set restores ~27%
+   unanswerable rows, which is where much of the difficulty lives.
+2. *Test-set model selection (leakage).* The notebook used
+   =eval_dataset = tokenized_test= with =load_best_model_at_end=True= and
+   =metric_for_best_model=eval_f1=, i.e. the best epoch was chosen *on the test
+   set itself*. There was no held-out dev split. The reported number is therefore
+   an upper bound, not an unbiased test estimate.
+3. *Metric implementation.* The notebook's =compute_metrics= assumed a 1:1
+   feature/example alignment despite =return_overflowing_tokens=True=, and took
+   =argmax= start/end independently without a =start<=end= constraint. For the
+   short robbery reports this rarely fires, but it is not a correct SQuAD-v2
+   scorer.
+
+Consequence for the extended paper: the M2 numbers (~0.73 dev / ~0.59 gold) are
+*lower but honest*, and the drop is the story — under a realistic, leakage-free
+SQuAD-v2 protocol the earlier 82.88 does not hold, and we can point to exactly
+where extraction fails (place, objects). Frame the 82.88 as a proof-of-concept
+result on an easier, all-answerable, test-selected setup.
+
+*** The threshold fix (it *is* about the oracle threshold)
+Clarification requested: yes, the fix concerns the oracle threshold, but the fix
+is to *stop reporting it on test*, not to use it.
+
+- =best_f1= / =best_f1_thresh= scan every no-answer threshold *on whatever set is
+  passed in*. Computed on the *test* set they constitute an oracle (the threshold
+  has seen the test labels) → optimistic → not publishable.
+- Correct protocol: take the threshold tuned on *dev*, which is already saved as
+  =eval_best_f1_thresh= at the selected/best epoch in =training_history.csv=;
+  *freeze* that single scalar; apply it to test. Report that dev-tuned test F1 as
+  the headline.
+- Reporting convention going forward: plain =f1= (threshold 0.0) = lower bound;
+  *dev-tuned threshold applied to test* = headline; =best_f1=-on-test = never
+  reported as a result (diagnostic only).
+- No code change is required to *report* this (the dev threshold is already
+  persisted). Wiring "carry dev threshold -> test" directly into
+  =run_qa_ablation.py= is an optional later enhancement.
+
+*** Note on multi-GPU vs single-GPU (correction)
+For a *single* training run, multi-GPU DDP is genuinely faster (confirmed
+empirically: hours on 1 GPU vs. a fraction of that on 8), and remains the right
+choice per run. The earlier "single-GPU" remark applies *only* to the full 24-run
+ablation matrix: there, launching independent jobs one-per-GPU via
+=scripts/run_ablation_parallel.sh= maximizes *total* throughput across all runs,
+versus DDP-ing one job at a time sequentially. The two statements are not in
+conflict: DDP for one run, independent-parallel for the many-run matrix.
