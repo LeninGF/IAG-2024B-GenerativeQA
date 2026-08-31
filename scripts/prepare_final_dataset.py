@@ -225,6 +225,14 @@ def push_to_hub(paths, gold_test_path, repo_id):
     dataset_dict = DatasetDict({"train": train_ds, "validation": dev_ds, "test": test_ds})
     if gold_test_path and os.path.exists(gold_test_path):
         gold_ds = load_dataset("json", data_files=gold_test_path, split="train")
+        # The Hub DatasetDict requires identical features across all splits.
+        # Keep the audit metadata in the local gold_test.jsonl, but strip the
+        # gold-only columns from the pushed split so every split shares the
+        # same SQuAD v2 + context_id schema.
+        gold_only_cols = [c for c in ("model", "error_type", "human_correct", "kind")
+                          if c in gold_ds.column_names]
+        if gold_only_cols:
+            gold_ds = gold_ds.remove_columns(gold_only_cols)
         dataset_dict["gold_test"] = gold_ds
 
     print(f"Pushing {len(dataset_dict['train'])}/{len(dataset_dict['validation'])}/"
