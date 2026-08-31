@@ -53,11 +53,13 @@ DRY_RUN=0
 MODELS_STR=""
 PUSH_MODEL=0
 MODEL_REPO_ID=""
+LR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output-dir) OUT_DIR="$2"; shift 2 ;;
     --epochs) EPOCHS="$2"; shift 2 ;;
+    --lr) LR="$2"; shift 2 ;;
     --early-stopping-patience) EARLY_STOPPING="$2"; shift 2 ;;
     --gpus) GPUS="$2"; shift 2 ;;
     --hf-dataset) HF_DATASET="$2"; shift 2 ;;
@@ -122,6 +124,9 @@ for model in "${MODELS[@]}"; do
   if [[ -n "$LIMIT_CONTEXTS" ]]; then
     zsl_cmd+=(--limit-contexts "$LIMIT_CONTEXTS")
   fi
+  if [[ -n "$LR" ]]; then
+    zsl_cmd+=(--lr "$LR")
+  fi
   echo "  [ZSL] ${zsl_cmd[*]}"
   if [[ $DRY_RUN -eq 0 ]]; then
     CUDA_VISIBLE_DEVICES="$ZSL_GPU" "${zsl_cmd[@]}"
@@ -141,6 +146,9 @@ for model in "${MODELS[@]}"; do
   fi
   if [[ -n "$LIMIT_CONTEXTS" ]]; then
     ft_cmd+=(--limit-contexts "$LIMIT_CONTEXTS")
+  fi
+  if [[ -n "$LR" ]]; then
+    ft_cmd+=(--lr "$LR")
   fi
   if [[ $PUSH_MODEL -eq 1 ]]; then
     ft_cmd+=(--push-model)
