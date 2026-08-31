@@ -546,7 +546,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             args=training_args,
             train_dataset=tokenized_train,
             eval_dataset=eval_feat_ds,
-            tokenizer=tokenizer,
+            processing_class=tokenizer,
             data_collator=DefaultDataCollator(),
             compute_metrics=make_compute_metrics(dev, eval_features, qa_utils),
         )
