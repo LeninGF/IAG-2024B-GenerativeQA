@@ -4,23 +4,27 @@ to the Hugging Face Hub.
 The QC pipeline already produced final, filtered datasets in ``out_qc_M2/``.
 This script does NOT apply any additional quality filtering: it only validates
 the SQuAD v2 schema, performs a deterministic context-level split
-(train/dev/test), writes the split JSONL files locally, and optionally pushes
-them to a Hugging Face dataset repo.
+(train/dev/test), optionally excludes the gold-audit rows to prevent data
+leakage, writes the split JSONL files locally, and optionally pushes them to a
+Hugging Face dataset repo.
 
 Usage examples:
-    # Prepare locally (default input = merged dataset):
+    # Prepare locally (default input = merged dataset, gold audit excluded):
     python scripts/prepare_final_dataset.py --output-dir dataset/prepared_m2
 
     # Smoke test with only 20 contexts:
-    python scripts/prepare_final_dataset.py --limit-contexts 20 \
+    python scripts/prepare_final_dataset.py --limit-contexts 20 \\
         --output-dir /tmp/prepared_m2
 
-    # Prepare and push to Hugging Face:
-    python scripts/prepare_final_dataset.py \
-        --input out_qc_M2/squadv2_final_merged.jsonl \
-        --output-dir dataset/prepared_m2 \
-        --repo-id LeninGF/robos-question-answering-m2 \
+    # Prepare and push to Hugging Face (train/validation/test/gold_test):
+    python scripts/prepare_final_dataset.py \\
+        --input out_qc_M2/squadv2_final_merged.jsonl \\
+        --output-dir dataset/prepared_m2 \\
+        --repo-id LeninGF/robos-question-answering-m2 \\
         --push
+
+    # Keep gold-audit rows in the random splits (not recommended):
+    python scripts/prepare_final_dataset.py --no-exclude-gold
 
 Dependencies: only the Python stdlib for local preparation. ``datasets`` and
 ``huggingface_hub`` are imported lazily only when ``--push`` is used.
@@ -34,6 +38,7 @@ import os
 from datetime import datetime
 
 from qa_dataset_utils import (
+    build_gold_dataset,
     filter_by_context,
     load_squad2_variant,
     save_jsonl,
@@ -43,6 +48,7 @@ from qa_dataset_utils import (
 DEFAULT_INPUT = "out_qc_M2/squadv2_final_merged.jsonl"
 DEFAULT_OUTPUT_DIR = "dataset/prepared_m2"
 DEFAULT_REPO_ID = "LeninGF/robos-question-answering-m2"
+DEFAULT_GOLD_AUDIT = "out_qc_M2/audit_stratified_sample_labeled_v1.csv"
 
 
 def parse_args():
@@ -55,13 +61,23 @@ def parse_args():
     parser.add_argument("--dev-frac", type=float, default=0.1)
     parser.add_argument("--test-frac", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--gold-audit", default=DEFAULT_GOLD_AUDIT,
+                        help=f"Gold audit CSV whose (context, question) pairs are excluded (default: {DEFAULT_GOLD_AUDIT})")
+    parser.add_argument("--exclude-gold", action=argparse.BooleanOptionalAction, default=True,
+                        help="Remove gold-audit (context, question) pairs from train/dev/test to prevent leakage")
     parser.add_argument("--repo-id", default=DEFAULT_REPO_ID,
                         help=f"HF dataset repo id (default: {DEFAULT_REPO_ID})")
     parser.add_argument("--push", action="store_true",
-                        help="Push train/dev/test to the Hugging Face Hub")
+                        help="Push train/dev/test/gold_test to the Hugging Face Hub")
     parser.add_argument("--limit-contexts", type=int, default=None,
                         help="Only use the first N contexts (smoke tests)")
     return parser.parse_args()
+
+
+def _exclude_gold_pairs(rows, gold_keys):
+    if not gold_keys:
+        return rows
+    return [r for r in rows if (r["context"], r["question"]) not in gold_keys]
 
 
 def main():
@@ -74,6 +90,16 @@ def main():
     print(f"Loaded {len(records)} records "
           f"({sum(1 for r in records if not r['is_impossible'])} answerable, "
           f"{sum(1 for r in records if r['is_impossible'])} unanswerable)")
+
+    # Gold audit (held-out evaluation set)
+    gold_records = []
+    gold_keys = set()
+    if args.exclude_gold and os.path.exists(args.gold_audit):
+        gold_records = build_gold_dataset(args.gold_audit)
+        gold_keys = {(r["context"], r["question"]) for r in gold_records}
+        print(f"Gold audit: {len(gold_records)} rows loaded from {args.gold_audit}")
+    elif args.exclude_gold:
+        print(f"WARNING: --exclude-gold is set but {args.gold_audit} does not exist; no gold exclusion applied.")
 
     train_ids, dev_ids, test_ids = split_by_context(
         records,
@@ -88,6 +114,19 @@ def main():
     train = filter_by_context(records, set(train_ids))
     dev = filter_by_context(records, set(dev_ids))
     test = filter_by_context(records, set(test_ids))
+
+    n_gold_before = {"train": len(train), "dev": len(dev), "test": len(test)}
+    train = _exclude_gold_pairs(train, gold_keys)
+    dev = _exclude_gold_pairs(dev, gold_keys)
+    test = _exclude_gold_pairs(test, gold_keys)
+    n_gold_excluded = {
+        "train": n_gold_before["train"] - len(train),
+        "dev": n_gold_before["dev"] - len(dev),
+        "test": n_gold_before["test"] - len(test),
+    }
+    if any(n_gold_excluded.values()):
+        print("Gold exclusion: " + ", ".join(f"{k}={v}" for k, v in n_gold_excluded.items()))
+
     # Drop internal bookkeeping column before writing/pushing to the Hub.
     for rows in (train, dev, test):
         for r in rows:
@@ -114,6 +153,31 @@ def main():
         save_jsonl(rows, paths[name])
         print(f"  {name}: {len(rows)} rows -> {paths[name]}")
 
+    # Write the gold audit as a convenience SQuAD v2 split (evaluation only).
+    gold_test_path = None
+    if gold_records:
+        gold_test_path = os.path.join(output_dir, "gold_test.jsonl")
+        clean_gold = []
+        for r in gold_records:
+            rec = {
+                "id": r["id"],
+                "context": r["context"],
+                "question": r["question"],
+                "is_impossible": bool(r["is_impossible"]),
+                "answers": {
+                    "text": list(r["answers"]["text"]),
+                    # Placeholder offset: gold answers may be paraphrases; the
+                    # text is the reference used for EM/F1.
+                    "answer_start": [max(int(s), 0) for s in r["answers"]["answer_start"]],
+                },
+            }
+            for key in ("context_id", "model", "error_type", "human_correct", "kind"):
+                if r.get(key) is not None:
+                    rec[key] = r[key]
+            clean_gold.append(rec)
+        save_jsonl(clean_gold, gold_test_path)
+        print(f"  gold_test: {len(clean_gold)} rows -> {gold_test_path}")
+
     info = {
         "source": os.path.abspath(args.input),
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -121,6 +185,10 @@ def main():
         "dev_frac": args.dev_frac,
         "test_frac": args.test_frac,
         "seed": args.seed,
+        "exclude_gold": bool(args.exclude_gold),
+        "gold_audit": os.path.abspath(args.gold_audit) if gold_records else None,
+        "n_gold_test": len(gold_records),
+        "n_gold_excluded": n_gold_excluded,
         "n_records": len(records),
         "n_train": len(train),
         "n_dev": len(dev),
@@ -135,11 +203,11 @@ def main():
     print(f"Saved {info_path}")
 
     if args.push:
-        push_to_hub(paths, args.repo_id, args.train_frac, args.dev_frac, args.test_frac, args.seed)
+        push_to_hub(paths, gold_test_path, args.repo_id)
 
 
-def push_to_hub(paths, repo_id, train_frac, dev_frac, test_frac, seed):
-    """Push the three JSONL files as a HF DatasetDict with train/dev/test splits."""
+def push_to_hub(paths, gold_test_path, repo_id):
+    """Push the JSONL files as a HF DatasetDict with train/validation/test/gold_test splits."""
     from datasets import DatasetDict, load_dataset
     from dotenv import load_dotenv
     from huggingface_hub import login
@@ -155,9 +223,14 @@ def push_to_hub(paths, repo_id, train_frac, dev_frac, test_frac, seed):
     dev_ds = load_dataset("json", data_files=paths["dev"], split="train")
     test_ds = load_dataset("json", data_files=paths["test"], split="train")
     dataset_dict = DatasetDict({"train": train_ds, "validation": dev_ds, "test": test_ds})
+    if gold_test_path and os.path.exists(gold_test_path):
+        gold_ds = load_dataset("json", data_files=gold_test_path, split="train")
+        dataset_dict["gold_test"] = gold_ds
 
     print(f"Pushing {len(dataset_dict['train'])}/{len(dataset_dict['validation'])}/"
-          f"{len(dataset_dict['test'])} rows to {repo_id} ...")
+          f"{len(dataset_dict['test'])}"
+          + (f"/{len(dataset_dict['gold_test'])}" if "gold_test" in dataset_dict else "")
+          + f" rows to {repo_id} ...")
     dataset_dict.push_to_hub(repo_id, private=False)
     print(f"Done. Load with: load_dataset('{repo_id}')")
 

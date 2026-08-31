@@ -23,6 +23,18 @@ Examples:
 
     # Run the whole matrix sequentially on one GPU:
     python scripts/run_qa_ablation.py --all --gpu 0 --output-dir out_experiments/run1
+
+    # Use a prepared local directory (from prepare_final_dataset.py, gold-excluded):
+    python scripts/run_qa_ablation.py \\
+        --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \\
+        --dataset merged --mode both --gpu 0 \\
+        --data-dir dataset/prepared_m2 --output-dir out_experiments/run1
+
+    # Load prepared splits directly from the Hugging Face Hub:
+    python scripts/run_qa_ablation.py \\
+        --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \\
+        --dataset merged --mode both --gpu 0 \\
+        --hf-dataset LeninGF/robos-question-answering-m2 --output-dir out_experiments/run1
 """
 
 from __future__ import annotations
@@ -84,6 +96,10 @@ def parse_args():
     p.add_argument("--gold-audit", default=DEFAULT_GOLD_AUDIT)
     p.add_argument("--limit-contexts", type=int, default=None,
                    help="Only use the first N contexts (smoke tests)")
+    p.add_argument("--data-dir", default=None,
+                   help="Use prepared local splits train.jsonl/dev.jsonl/test.jsonl from this directory")
+    p.add_argument("--hf-dataset", default=None,
+                   help="Load prepared splits from a Hugging Face dataset repo (train/validation/test)")
 
     # Training hyperparameters (paper defaults from Table 3)
     p.add_argument("--epochs", type=int, default=10)
@@ -100,7 +116,10 @@ def parse_args():
                    help="Keep fine-tuned checkpoints on disk (default: only best model artifacts)")
     p.add_argument("--skip-zero-shot", action="store_true")
     p.add_argument("--skip-fine-tune", action="store_true")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.data_dir and args.hf_dataset:
+        p.error("--data-dir and --hf-dataset are mutually exclusive")
+    return args
 
 
 def sanitize_model(model: str) -> str:
@@ -137,6 +156,10 @@ def print_plan(args):
             f"--per-device-eval-batch-size {args.per_device_eval_batch_size} "
             f"--grad-accum {args.grad_accum} --gold-audit {args.gold_audit} "
         )
+        if args.data_dir:
+            cmd += f"--data-dir {args.data_dir} "
+        if args.hf_dataset:
+            cmd += f"--hf-dataset {args.hf_dataset} "
         cmd += "--fp16" if args.fp16 else "--no-fp16"
         if args.save_models:
             cmd += " --save-models"
@@ -172,6 +195,45 @@ def load_experiment_splits(args, qa_utils, dataset_name):
         train = qa_utils.filter_by_context(merged, set(train_ids))
     else:
         train = qa_utils.filter_by_context(variants[dataset_name], set(train_ids))
+    return train, dev, test
+
+
+def _normalize_hf_row(row, split_name, qa_utils):
+    rec = dict(row)
+    rec["is_impossible"] = bool(rec.get("is_impossible", False))
+    errors = qa_utils.validate_squad2_record(rec)
+    if errors:
+        raise ValueError(f"Invalid SQuAD v2 record in HF split '{split_name}': {errors} :: {rec}")
+    rec["context_id"] = qa_utils.derive_context_id(rec)
+    rec["_source"] = split_name
+    return rec
+
+
+def load_prepared_splits(args, qa_utils):
+    """Load train/dev/test from a prepared directory or a HF dataset repo.
+
+    Prepared files (from scripts/prepare_final_dataset.py) already exclude the
+    gold-audit pairs and use the same SQuAD v2 schema. When ``--limit-contexts``
+    is set, only the first N contexts (sorted) are kept for smoke tests.
+    """
+    if args.data_dir:
+        train = qa_utils.load_squad2_variant(os.path.join(args.data_dir, "train.jsonl"), "train")
+        dev = qa_utils.load_squad2_variant(os.path.join(args.data_dir, "dev.jsonl"), "dev")
+        test = qa_utils.load_squad2_variant(os.path.join(args.data_dir, "test.jsonl"), "test")
+    else:
+        from datasets import load_dataset
+
+        ds = load_dataset(args.hf_dataset)
+        train = [_normalize_hf_row(dict(r), "train", qa_utils) for r in ds["train"]]
+        dev = [_normalize_hf_row(dict(r), "validation", qa_utils) for r in ds["validation"]]
+        test = [_normalize_hf_row(dict(r), "test", qa_utils) for r in ds["test"]]
+
+    if args.limit_contexts is not None:
+        all_ids = sorted({r["context_id"] for r in train})
+        keep = set(all_ids[: max(0, args.limit_contexts)])
+        train = [r for r in train if r["context_id"] in keep]
+        dev = [r for r in dev if r["context_id"] in keep]
+        test = [r for r in test if r["context_id"] in keep]
     return train, dev, test
 
 
@@ -393,6 +455,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         "output_dir": exp_dir, "seed": args.seed,
         "test_size": args.test_size, "dev_size": args.dev_size,
         "limit_contexts": args.limit_contexts, "gold_audit": args.gold_audit,
+        "data_dir": args.data_dir, "hf_dataset": args.hf_dataset,
         "epochs": args.epochs, "lr": args.lr, "weight_decay": args.weight_decay,
         "max_length": args.max_length, "stride": args.stride,
         "per_device_train_batch_size": args.per_device_train_batch_size,
@@ -412,7 +475,10 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         TrainingArguments,
     )
 
-    train, dev, test = load_experiment_splits(args, qa_utils, dataset)
+    if args.data_dir or args.hf_dataset:
+        train, dev, test = load_prepared_splits(args, qa_utils)
+    else:
+        train, dev, test = load_experiment_splits(args, qa_utils, dataset)
     gold = qa_utils.build_gold_dataset(args.gold_audit) if os.path.exists(args.gold_audit) else []
     print(f"[{model_id} | {dataset} | {mode}] train={len(train)} dev={len(dev)} "
           f"test={len(test)} gold={len(gold)}")
