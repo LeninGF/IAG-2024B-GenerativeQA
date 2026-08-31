@@ -523,11 +523,19 @@ def postprocess_qa_predictions(
                                 best_text = text
                                 best_score = score
                                 break
+        # SQuAD v2 official convention: no_answer_probability is the null score
+        # minus the best non-null span score. A threshold of 0.0 then predicts
+        # "no answer" only when the null hypothesis scores higher than the best
+        # extracted span (the HF run_squad.py convention).
+        if best_score == float("-inf"):
+            no_answer_probability = float("inf")
+        else:
+            no_answer_probability = min_null_score - best_score
         out.append(
             {
                 "id": ex_id,
                 "prediction_text": best_text,
-                "no_answer_probability": min_null_score,
+                "no_answer_probability": no_answer_probability,
             }
         )
     return out
