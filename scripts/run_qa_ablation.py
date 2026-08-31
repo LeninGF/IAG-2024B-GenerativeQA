@@ -636,6 +636,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
             num_train_epochs=args.epochs,
             weight_decay=args.weight_decay,
             fp16=args.fp16,
+            ddp_find_unused_parameters=False,
             logging_strategy="epoch",
             report_to="none",
             remove_unused_columns=False,
