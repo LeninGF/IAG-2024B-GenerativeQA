@@ -45,6 +45,8 @@ EARLY_STOPPING=""
 DATA_DIR=""
 HF_DATASET=""
 LIMIT_CONTEXTS=""
+PUSH_MODEL=0
+MODEL_REPO_ID=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,6 +80,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --limit-contexts)
       LIMIT_CONTEXTS="$2"
+      shift 2
+      ;;
+    --push-model)
+      PUSH_MODEL=1
+      shift
+      ;;
+    --model-repo-id)
+      MODEL_REPO_ID="$2"
       shift 2
       ;;
     *)
@@ -152,6 +162,12 @@ launch_experiment() {
   fi
   if [[ -n "$LIMIT_CONTEXTS" ]]; then
     cmd+=" --limit-contexts ${LIMIT_CONTEXTS}"
+  fi
+  if [[ "$mode" == "ft" && $PUSH_MODEL -eq 1 ]]; then
+    cmd+=" --push-model"
+    if [[ -n "$MODEL_REPO_ID" ]]; then
+      cmd+=" --model-repo-id ${MODEL_REPO_ID}"
+    fi
   fi
 
   echo "GPU ${gpu}: ${model} | ${dataset} | ${mode}"

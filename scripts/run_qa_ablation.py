@@ -123,7 +123,11 @@ def parse_args():
     p.add_argument("--fp16", action=argparse.BooleanOptionalAction, default=True)
 
     p.add_argument("--save-models", action="store_true",
-                   help="Keep fine-tuned checkpoints on disk (default: only best model artifacts)")
+                   help="Keep raw training checkpoints on disk (the best model is always saved to exp_dir/model)")
+    p.add_argument("--push-model", action="store_true",
+                   help="Push the saved best model to the Hugging Face Hub (requires HUGGINGFACE_TOKEN)")
+    p.add_argument("--model-repo-id", default=None,
+                   help="HF model repo id for --push-model; auto-generated if omitted")
     p.add_argument("--early-stopping-patience", type=int, default=None,
                    help="Stop training if eval_f1 does not improve for N evaluations (default: disabled)")
     p.add_argument("--check-splits", action="store_true",
@@ -223,6 +227,10 @@ def print_plan(args):
             cmd += f" --early-stopping-patience {args.early_stopping_patience}"
         if args.save_models:
             cmd += " --save-models"
+        if args.push_model:
+            cmd += " --push-model"
+            if args.model_repo_id:
+                cmd += f" --model-repo-id {args.model_repo_id}"
         if args.limit_contexts is not None:
             cmd += f" --limit-contexts {args.limit_contexts}"
         print(cmd)
@@ -635,6 +643,8 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
         "per_device_eval_batch_size": args.per_device_eval_batch_size,
         "grad_accum": args.grad_accum, "fp16": args.fp16,
         "early_stopping_patience": args.early_stopping_patience,
+        "push_model": args.push_model,
+        "model_repo_id": args.model_repo_id,
     }
     if is_main:
         with open(os.path.join(exp_dir, "config.json"), "w", encoding="utf-8") as f:
@@ -754,6 +764,29 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
                 gold_metrics = qa_utils.squad_v2_metrics(gold_preds, gold)
             write_metrics(exp_dir, model_id, dataset, "ft", metrics, kind_metrics,
                           gold_metrics, preds, config)
+
+            # Save the best model as a clean final artifact (always).
+            model_dir = os.path.join(exp_dir, "model")
+            trainer.save_model(model_dir)
+            print(f"Best model saved to {model_dir}")
+
+            if getattr(args, "push_model", False):
+                if not args.model_repo_id:
+                    import datetime
+                    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    args.model_repo_id = f"LeninGF/qa-{dataset}-{sanitize_model(model_id)}-ft-{stamp}"
+                from dotenv import load_dotenv
+                from huggingface_hub import login
+
+                load_dotenv()
+                hf_token = os.getenv("HUGGINGFACE_TOKEN")
+                if not hf_token:
+                    raise RuntimeError("HUGGINGFACE_TOKEN not found. Add it to a .env file at the repo root.")
+                login(hf_token)
+                print(f"Pushing model to {args.model_repo_id} ...")
+                trainer.model.push_to_hub(args.model_repo_id, private=False)
+                tokenizer.push_to_hub(args.model_repo_id)
+                print(f"Model pushed to https://huggingface.co/{args.model_repo_id}")
 
             if not args.save_models:
                 import shutil

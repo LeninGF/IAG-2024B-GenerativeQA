@@ -366,3 +366,40 @@ Conclusions:
 - Decision (2026-08-31): no change to `run_option_b_multi_gpu.sh` for now; use
   `run_qa_ablation.py` or `run_ablation_multi_gpu.sh` directly for the paper
   dataset if/when needed.
+
+** Saving and pushing fine-tuned models (2026-08-31)
+- The best fine-tuned model is **always** saved locally to `exp_dir/model/`
+  (`trainer.save_model()`), even without `--save-models`. The `--save-models`
+  flag now only controls keeping the raw training checkpoints (`checkpoints/`);
+  it no longer controls whether a usable final model exists.
+- Pushing to the HF Hub is **opt-in** via `--push-model`. Default runs only
+  save locally, so we do not accidentally upload every ablation model.
+- Optional `--model-repo-id <repo>` sets an explicit repo; if omitted the
+  script auto-generates one:
+  `LeninGF/qa-<dataset>-<sanitized_model>-ft-<YYYYMMDD_HHMMSS>`.
+- Requires `HUGGINGFACE_TOKEN` (same mechanism as the dataset push).
+
+Suggested workflow:
+1. Train/save locally first and inspect `exp_dir/model/` + `metrics_summary.json`.
+2. Push only the chosen model(s), e.g.:
+
+   #+begin_src bash
+   python scripts/run_qa_ablation.py \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode ft --gpu 0 \
+     --hf-dataset LeninGF/question-answering-robbery-m2 \
+     --epochs 20 --early-stopping-patience 3 \
+     --output-dir out_experiments/m2_beto_final \
+     --push-model --model-repo-id LeninGF/qa-m2-beto-ft
+   #+end_src
+
+3. Suggested repo naming convention (per dataset/model/mode):
+   - `LeninGF/qa-m2-beto-ft`
+   - `LeninGF/qa-m2-beto-ft-20260831`
+   - `LeninGF/qa-paper-beto-ft` (paper legacy replication)
+   Keep it descriptive; do not push every ablation run by default.
+
+Demo script: `scripts/qa_demo.py` loads a saved/pushed model, samples a random
+`(context, question)` row from a dataset, and prints the prediction:
+   python scripts/qa_demo.py --model-dir <exp_dir>/model \
+     --hf-dataset LeninGF/question-answering-robbery-m2

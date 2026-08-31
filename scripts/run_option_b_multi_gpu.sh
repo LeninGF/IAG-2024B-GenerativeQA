@@ -51,6 +51,8 @@ ZSL_GPU="${ZSL_GPU:-0}"
 LIMIT_CONTEXTS=""
 DRY_RUN=0
 MODELS_STR=""
+PUSH_MODEL=0
+MODEL_REPO_ID=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -63,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     --zsl-gpu) ZSL_GPU="$2"; shift 2 ;;
     --limit-contexts) LIMIT_CONTEXTS="$2"; shift 2 ;;
     --models) MODELS_STR="$2"; shift 2 ;;
+    --push-model) PUSH_MODEL=1; shift ;;
+    --model-repo-id) MODEL_REPO_ID="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -92,6 +96,7 @@ echo "Output dir: $OUT_DIR"
 if [[ -n "$DATA_DIR" ]]; then echo "Data: $DATA_DIR"; else echo "Data: HF $HF_DATASET"; fi
 if [[ -n "$EARLY_STOPPING" ]]; then echo "Early stopping patience: $EARLY_STOPPING"; fi
 if [[ -n "$LIMIT_CONTEXTS" ]]; then echo "Limit contexts: $LIMIT_CONTEXTS (smoke)"; fi
+if [[ $PUSH_MODEL -eq 1 ]]; then echo "Push fine-tuned models to HF: yes"; fi
 if [[ $DRY_RUN -eq 1 ]]; then echo "(dry run)"; fi
 echo ""
 
@@ -136,6 +141,12 @@ for model in "${MODELS[@]}"; do
   fi
   if [[ -n "$LIMIT_CONTEXTS" ]]; then
     ft_cmd+=(--limit-contexts "$LIMIT_CONTEXTS")
+  fi
+  if [[ $PUSH_MODEL -eq 1 ]]; then
+    ft_cmd+=(--push-model)
+    if [[ -n "$MODEL_REPO_ID" ]]; then
+      ft_cmd+=(--model-repo-id "$MODEL_REPO_ID")
+    fi
   fi
   echo "  [FT] ${ft_cmd[*]}"
   run_cmd "${ft_cmd[@]}"
