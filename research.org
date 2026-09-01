@@ -769,3 +769,44 @@ python scripts/run_qa_ablation.py     \
        --split-mode row      \
        --output-dir out_experiments/paper_replication
 #+end_src
+
+* 2026-09-01 paper/ summary result files: how they were obtained
+
+The following =paper/= files are aggregated summaries produced with
+=scripts/aggregate_results.py= (they read the per-experiment
+=metrics_summary.json=, =gold_audit_metrics.json=, and
+=metrics_by_question_type.csv= under each results root).
+
+Option B ablation (4 models x {zsl, ft} = 8 experiments):
+
+#+begin_src shell
+python scripts/aggregate_results.py \
+  --root out_experiments/option_b_abblation \
+  --out paper/results_summary_option_b.csv --format csv
+
+python scripts/aggregate_results.py \
+  --root out_experiments/option_b_abblation \
+  --out paper/results_summary_option_b.json --format json
+#+end_src
+
+Paper replication (legacy dataset, mrm8488 BETO, zsl + ft):
+
+#+begin_src shell
+python scripts/aggregate_results.py \
+  --root out_experiments/paper_replication \
+  --out paper/results_summary_paper_replication.csv --format csv
+#+end_src
+
+Notes:
+- =paper/results_summary.csv= and =paper/results_summary.json= are older
+  files that already existed before this session; they were NOT regenerated
+  here and may still be stale (e.g. they may mark the distilled BETO FT run
+  as incomplete). Use =paper/results_summary_option_b.csv/json= as the
+  current Option B source of truth.
+- =paper/00_aggregate_results.ipynb= was already present in =paper/= and was
+  not created in this session; it is kept for reference.
+* 2026-09-01 improvements on the paper
+- change the block style
+- commented research gap review to see if it fits
+- should related works be plain with no subsections?
+- check if the pipeline is four or five stages and make uniform
