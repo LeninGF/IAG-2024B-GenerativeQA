@@ -1,0 +1,345 @@
+%%%%%%%%%%%%%%%%%%%% author.tex %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% sample root file for your "contribution" to a contributed volume
+%
+% Use this file as a template for your own input.
+%
+%%%%%%%%%%%%%%%% Springer Nature %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% RECOMMENDED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[graybox]{SNmult}
+
+%\usepackage{mathptmx}       % selects Times Roman as basic font
+%\usepackage{helvet}         % selects Helvetica as sans-serif font
+%\usepackage{courier}        % selects Courier as typewriter font
+\usepackage{type1cm}        % activate if the above 3 fonts are
+                            % not available on your system
+%
+\usepackage{makeidx}         % allows index generation
+\usepackage{graphicx}        % standard LaTeX graphics tool
+                             % when including figure files
+\usepackage{multicol}        % used for the two-column index
+\usepackage[bottom]{footmisc}% places footnotes at page bottom
+
+
+\usepackage{newtxtext}       % 
+\usepackage[varvw]{newtxmath}       % selects Times Roman as basic font
+\usepackage{booktabs}        % publication-quality tables (toprule/midrule/bottomrule)
+\usepackage{url}             % robust \url for bibliography URLs/DOIs with special chars
+
+\makeindex             % used for the subject index
+                       % please use the style svind.ist with
+                       % your makeindex program
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+% \motto{This is my motto.}       
+\title*{Quality-Controlled Synthetic SQuAD v2 Data for Extractive
+  Question Answering in Spanish Robbery Reports}
+\titlerunning{Quality-Controlled Synthetic Data for Legal EQA}
+% Use \titlerunning{Short Title} for an abbreviated version of
+% your contribution title if the original one is too long
+\author{Lenin G. Falconi\orcidID{0000-0003-4402-6643} and\\
+Lorena Isabel Barona López\orcidID{0000-0002-5184-3759} and\\
+Myriam Hernandez-Alvarez\orcidID{0000-0003-4718-0400}}
+\authorrunning{L. Falconi et al.}
+\institute{Lenin G. Falconi \at Escuela Politécnica Nacional, Quito 170525, Ecuador, \email{lenin.falconi@epn.edu.ec}
+\and Lorena Isabel Barona López \at Escuela Politécnica Nacional, Quito 170525, Ecuador, \email{lorena.barona@epn.edu.ec}
+\and Myriam Hernandez-Alvarez \at Escuela Politécnica Nacional, Quito 170525, Ecuador, \email{myriam.hernandez@epn.edu.ec}}
+%
+% Use the package "url.sty" to avoid
+% problems with special characters
+% used in your e-mail or web address
+%
+\maketitle
+\abstract*{Extractive question answering (EQA) can facilitate the retrieval of salient facts from criminal reports, including the location and time of an incident, stolen objects, and reported economic losses. Its reliability, however, depends on the semantic quality of the question--answer annotations used for training and evaluation. Our prior work showed that a Spanish transformer model fine-tuned on a generatively constructed dataset can retrieve answer spans from robbery reports. This paper extends that study by examining the reliability of the data-generation stage itself. We construct a SQuAD v2-style resource from Spanish robbery narratives using open large language models (LLMs), automatic answer-span checks, and a stratified human audit. The proposed workflow validates literal span occurrence and answer offsets, represents unanswerable questions explicitly, and identifies semantic errors that are not detected by string matching alone. These errors include responses with an incorrect semantic type, partial answers, temporal references associated with a different event, and answers supplied when the context does not support one. We propose separate raw, filtered, and human-verified dataset versions to support reproducible model development and more credible evaluation. The paper positions LLMs as controlled generators of candidate supervision rather than unquestioned annotation authorities for legal EQA.
+\keywords{Extractive question answering $\cdot$ Legal NLP $\cdot$
+  Synthetic data $\cdot$ SQuAD v2 $\cdot$ Large language models $\cdot$
+  Dataset quality}}
+
+\abstract{Extractive question answering (EQA) can facilitate the retrieval of salient facts from criminal reports, including the location and time of an incident, stolen objects, and reported economic losses. Its reliability, however, depends on the semantic quality of the question--answer annotations used for training and evaluation. Our prior work showed that a Spanish transformer model fine-tuned on a generatively constructed dataset can retrieve answer spans from robbery reports. This paper extends that study by examining the reliability of the data-generation stage itself. We construct a SQuAD v2-style resource from Spanish robbery narratives using open large language models (LLMs), automatic answer-span checks, and a stratified human audit. The proposed workflow validates literal span occurrence and answer offsets, represents unanswerable questions explicitly, and identifies semantic errors that are not detected by string matching alone. These errors include responses with an incorrect semantic type, partial answers, temporal references associated with a different event, and answers supplied when the context does not support one. We propose separate raw, filtered, and human-verified dataset versions to support reproducible model development and more credible evaluation. The paper positions LLMs as controlled generators of candidate supervision rather than unquestioned annotation authorities for legal EQA.
+\keywords{Extractive question answering $\cdot$ Legal NLP $\cdot$
+  Synthetic data $\cdot$ SQuAD v2 $\cdot$ Large language models $\cdot$
+  Dataset quality}}
+
+
+
+\section{Introduction}
+\label{sec:introduction}
+
+Criminal reports contain relevant facts for institutional and investigative work, but these facts are usually embedded in heterogeneous narrative descriptions. Information such as where an incident occurred, when it happened, which objects were stolen, and what economic value was reported may appear alongside witness accounts, procedural statements, contact information, vehicle descriptions, and spelling inconsistencies. Systems that retrieve evidence-supported facts from these documents could reduce the effort needed to review large collections of reports and support, rather than replace, professional analysis.
+
+Extractive question answering (EQA) is appropriate for this problem because it constrains the output to a span from a provided context. Given a question and a report, an EQA model predicts the start and end positions of the answer in the original narrative. This differs from generative question answering, whose output is composed token by token and may not occur in the evidence. The extractive constraint is valuable in legal and institutional settings: users can inspect the textual basis of a returned answer rather than relying on a fluent but potentially unsupported summary.
+
+In our previous work, we investigated transformer-based EQA for Spanish robbery reports from Ecuador. We used generative artificial intelligence to construct a SQuAD-style dataset and evaluated a Spanish BERT-based QA model in zero-shot and fine-tuned settings. Fine-tuning improved the reported F1 score from 81.70 to 82.88, indicating that domain-specific supervision can improve fact extraction from robbery narratives \cite{falconi2026robberyqa}. While that work established the feasibility of the task, it also raised an important methodological question: how reliable are the automatically generated QA annotations used to train and evaluate the system?
+
+This question matters whenever LLMs are used to construct supervision. A generated answer can be fluent, syntactically valid, and even occur literally in the source text while failing to answer the intended question. A distance may be returned as a location, a time associated with parking a vehicle may be confused with the time of the robbery, or a generic phrase may be selected despite the absence of an informative answer. Literal matching and a valid answer offset are necessary for extractive QA data, but they are not sufficient for semantic correctness.
+
+This paper extends the earlier study by treating data quality and answerability as central experimental variables. It generates candidate SQuAD v2-style instances using open LLMs, applies reproducible structural quality controls, conducts a stratified semantic audit, and establishes a context-disjoint, human-verified evaluation subset. The contributions are as follows:
+\begin{enumerate}
+\item A multi-model pipeline for generating candidate SQuAD v2-style QA pairs from Spanish robbery reports.
+\item Automatic checks for schema validity, literal span support, answer-offset consistency, duplication, and explicit unanswerability.
+\item A stratified human audit that distinguishes structural span validity from semantic QA correctness.
+\item A reproducible evaluation protocol that separates raw synthetic data, quality-filtered training data, and a human-verified gold test set.
+\end{enumerate}
+
+\section{Scientific Background and Related Work}
+\label{sec:related-work}
+
+\subsection{Extractive Question Answering and Unanswerability}
+
+Question answering comprises tasks that differ in the evidence available to the system and in the expected answer form. In open-domain QA, a system must retrieve evidence from a large corpus. In reading-comprehension QA, the context is provided alongside the question. EQA is a reading-comprehension formulation in which the answer must be a contiguous span in the supplied context. Given a tokenized context $C=(c_1,\ldots,c_n)$ and a question $Q$, an extractive reader estimates a start and end position:
+\begin{equation}
+(s^*,e^*) = \arg\max_{1 \leq s \leq e \leq n} P(s,e\mid C,Q),
+\label{eq:eqa}
+\end{equation}
+where the final answer is $c_{s^*:e^*}$. This formulation provides a direct provenance relation: the answer is traceable to a particular segment of the document.
+
+The Stanford Question Answering Dataset (SQuAD) established a widely adopted benchmark for extractive machine comprehension by pairing natural-language questions with answer spans in Wikipedia passages \cite{rajpurkar2016squad}. SQuAD also popularized exact match (EM) and token-level F1 as evaluation metrics. EM evaluates strict agreement after normalization, whereas token F1 measures the overlap between tokens in predicted and reference answers. These metrics are useful only insofar as the reference answer is itself semantically appropriate; a noisy reference may penalize a valid model prediction or reward an incorrect extraction.
+
+SQuAD v2 expanded the task by adding adversarially written unanswerable questions \cite{rajpurkar2018know}. Thus, a model must decide not only which span is relevant, but also whether the provided context contains evidence for any answer. This selective-prediction property is particularly important in robbery reports. A narrative may mention several times without stating the robbery time, describe a location only vaguely, or omit a monetary value altogether. A system that is forced to return a substring in every case is likely to generate unsupported extractions.
+
+Multilingual QA research confirms that extractive methods can be evaluated beyond English. MLQA includes Spanish among its languages and provides a benchmark for cross-lingual extractive QA \cite{lewis2020mlqa}. However, multilingual resources do not remove the need for domain-specific data. Spanish robbery reports often contain informal grammar, regional expressions, abbreviations, typographical errors, multiple events, and ambiguous references. These properties differ markedly from the encyclopedic passages used in general QA benchmarks and motivate a domain-sensitive construction and validation protocol.
+
+\subsection{Transformers and Evidence-Based Legal NLP}
+
+Transformer architectures use self-attention to learn context-dependent representations and have become the foundation of modern language understanding systems \cite{vaswani2017attention}. Encoder models such as BERT can be adapted to EQA by producing token representations from the combined question and context and then estimating start and end distributions over the context tokens \cite{devlin2019bert}. The architecture is well suited to evidence-based fact retrieval because it predicts positions in the original document rather than freely generating an answer.
+
+The legal domain presents specific challenges for NLP, including specialized language, jurisdictional variation, long documents, incomplete standardization, sensitive data, and limited expert annotations. Recent work surveying transformer-based legal text processing documents the growing use of these models for classification, retrieval, prediction, and question answering, while stressing the importance of reliable task definitions and evaluation \cite{greco2024transformerlegal}. Legal NLP surveys likewise identify data availability, interpretability, and transfer across legal systems as central methodological concerns \cite{niklaus2021legalnlp}.
+
+Legal benchmarks have increased multilingual coverage, but coverage remains uneven across jurisdictions and tasks. LEXTREME provides a multilingual and multi-task legal benchmark, illustrating both the progress and the fragmentation of legal NLP evaluation resources \cite{niklaus2023lextreme}. For Spanish, Legal-ES provides large-scale data for legal text processing from legislative, administrative, and jurisprudential sources \cite{gonzalez2020legales}. These resources are relevant to Spanish legal language, yet they differ from the incident-oriented, often first-person narratives analyzed in this research. The objective here is not to generate legal advice or interpret statutes; it is to retrieve evidence-supported facts from robbery reports.
+
+Related work on legal information retrieval and entailment further motivates traceable methods. Kim et al. apply transformer-based approaches to case-law retrieval and legal entailment in the COLIEE setting \cite{kim2024legalir}. Although that task differs from short-span extraction, both tasks require a system to ground its output in legal textual evidence. EQA offers a direct and inspectable evidence mechanism because the predicted answer is a span in the source narrative.
+
+Our previously published study contributes to this line by applying a Spanish BERT-based EQA model to robbery reports and using generative AI to create an initial SQuAD-format resource \cite{falconi2026robberyqa}. The present paper extends rather than replaces that work. Its new focus is the reliability of synthetic supervision: it distinguishes whether a span is structurally valid from whether it actually answers the question, refers to the correct robbery event, and provides sufficient information for the intended information need.
+
+\subsection{LLMs for Synthetic QA Data Generation}
+
+Large language models can produce candidate labels, instructions, summaries, and QA pairs at a scale that is difficult to achieve through exclusive manual annotation. This capability is particularly valuable for low-resource domains such as Spanish criminal narratives, where specialized annotation requires time and may be restricted by data sensitivity. LLMs can be prompted to identify a question, an answer string, an answer position, and an answerability label, creating records compatible with the SQuAD v2 representation.
+
+The scientific basis for structured QA generation predates contemporary instruction-tuned LLMs. Answer-aware neural question generation conditions a question on a designated answer within a context, thereby strengthening question--answer alignment \cite{zhou2017neuralqg}. Position-aware generation further incorporates the answer's location in the source text \cite{sun2018answerfocused}. These contributions establish an important principle for synthetic EQA construction: a valid instance is not merely a plausible question and a plausible phrase. It is a verifiable relation among a context, a question, an answer span, and an exact answer position.
+
+LLMs can facilitate the creation of this relation, but fluency must not be mistaken for correctness. Hallucination and unfaithfulness refer to generated content that is unsupported by or inconsistent with the available evidence \cite{ji2023hallucination,zhang2023siren}. In synthetic EQA, a closely related failure can occur even if the answer string appears in the report: the selected span can be semantically unrelated to the requested information. A phrase such as ``a few meters away'' may be literal but not a location; a time may refer to the discovery of theft rather than to the robbery; and an isolated noun may omit other explicitly stolen items.
+
+Evidence-based QA research emphasizes faithfulness, traceability, and robustness as essential requirements for dependable LLM systems \cite{schimanski2024faithful}. EQA provides a useful first constraint because the answer must be copied from a source context. Nevertheless, extractiveness is not complete semantic validation. Both an LLM producing candidate annotations and an EQA model making predictions can select a literal but wrong span. Therefore, an appropriate legal-EQA pipeline requires multiple safeguards: deterministic span verification, explicit support for unanswerable questions, category-aware risk detection, and a human audit to estimate residual semantic error.
+
+The study by Borroto et al. on question answering with LLMs and learning from answer sets offers a related reliability perspective \cite{borroto2025llm2las}. Its aim is story-based commonsense reasoning, and it is not a direct baseline for extractive QA over criminal reports. Its relevance to the present study is conceptual: it illustrates the value of supplementing LLM processing with explicit and externally checkable constraints. Here, that principle is implemented through answer-span checks, answerability controls, provenance fields, and audit labels rather than answer-set learning.
+
+Recent legal QA research has also investigated the use of LLM-generated supervision and distillation to produce legal QA resources \cite{italiani2025aceattorney}. Such work supports the practical value of LLM-assisted data creation but increases the importance of transparent validation. When generated labels are used for training, model performance should be evaluated on examples that are independent of the generation decisions used to create the training corpus. A human-verified, context-disjoint gold subset provides a more credible estimate of whether a downstream EQA model retrieves the intended evidence from new reports.
+
+\subsection{Research Gap and Paper Positioning}
+
+The reviewed literature establishes that EQA provides an evidence-constrained prediction framework, that legal NLP requires domain-aware and multilingual evaluation, and that LLMs can scale synthetic data generation while creating faithfulness risks. The gap addressed in this research lies at their intersection. Existing work has not sufficiently characterized the semantic quality of LLM-generated SQuAD v2-style data for Spanish criminal-report EQA, particularly for wrong semantic types, wrong event references, incomplete answers, and erroneous answers to unanswerable questions.
+
+Accordingly, this research does not only ask whether a fine-tuned transformer can obtain a high F1 score on generated annotations. It evaluates whether the generated annotations themselves are reliable enough for training and whether a filtered, quality-controlled dataset produces more trustworthy results on a human-verified test set. This transforms the extension into a reproducible investigation of synthetic-data reliability for Legal NLP.
+
+\section{Materials and Methods}
+\label{sec:methods}
+
+\subsection{Corpus and Data Governance}
+
+The study uses Spanish robbery reports from the Ecuadorian institutional context described in the prior work \cite{falconi2026robberyqa}. The final version must state the legal basis for access, de-identification procedures, access restrictions, retention practices, and the conditions under which data or derived annotations can be shared. Where original reports cannot be released, reproducibility should be supported through code, prompts, quality-control rules, model settings, and aggregate statistics.
+
+Each report is treated as one context. All QA instances obtained from the same report are assigned to the same partition by \texttt{context\_id}. This prevents leakage in which the training set contains one question from a report while the test set contains another question derived from the same narrative.
+
+\subsection{SQuAD v2-Style Candidate Generation}
+
+Open LLMs generate candidate QA pairs for target information categories: location, time, stolen objects, and monetary value. The prompt requires a structured record with at least \texttt{context\_id}, \texttt{question}, \texttt{answer\_text}, \texttt{answer\_start}, \texttt{is\_impossible}, and generator provenance. When the document does not explicitly support an answer, the model must output an empty answer and set \texttt{is\_impossible=true}.
+
+The final manuscript must provide model identifiers, versions, inference software, quantization, temperature, top-$p$, maximum tokens, retries, seed policy, prompt templates, hardware, and generation date. This is essential because changes in a model version or decoding configuration can alter generated labels and their error profile.
+
+\subsection{Automatic Quality Control}
+
+The automatic QC procedure is deterministic and precedes manual review. It verifies that required fields are present, that every answerable \texttt{answer\_text} occurs literally in its \texttt{context}, and that a recomputed \texttt{answer\_start} points to the same substring. It also identifies duplicate or ambiguous occurrences and records a transparent \texttt{qc\_status} together with a reason code.
+
+Category-aware checks flag candidates that may satisfy literal matching while posing semantic risk. For locations, examples include deictic or non-informative spans such as ``the indicated place'' or ``my home.'' For time questions, contexts with multiple time references are flagged, especially when a time refers to a prior action, discovery of the incident, or a period unrelated to the robbery. For object questions, the pipeline flags obvious non-object answers and possibly incomplete enumerations. For monetary values, it preserves currency expressions where possible and flags contexts containing multiple amounts.
+
+\subsection{Stratified Semantic Audit}
+
+A stratified audit sample is drawn across generating models, question categories, answerability labels, and QC statuses. Each record is reviewed for semantic correctness, completeness, event alignment, and correctness of the no-answer decision. The proposed error taxonomy includes \texttt{wrong\_semantic\_type}, \texttt{wrong\_event\_reference}, \texttt{partial\_location}, \texttt{incomplete\_object\_list}, \texttt{answered\_when\_unanswerable}, \texttt{incorrect\_impossible}, and \texttt{other}.
+
+If a double-annotated subset is feasible, report inter-annotator agreement using Cohen's $\kappa$ or a suitable alternative. If the audit is conducted by one domain-informed reviewer, state this transparently and report confidence intervals for the observed correctness rates. The audit is not intended to manually label the entire corpus; it is a statistically designed estimate of semantic label reliability and a mechanism for improving automatic filters.
+
+\subsection{Dataset Versions and Experiments}
+
+Three immutable versions should be retained: (i) the raw merged corpus, containing all parsed candidates and complete provenance; (ii) the filtered corpus, including records that meet pre-registered automatic QC criteria; and (iii) a context-disjoint, human-verified gold evaluation subset. The gold subset must not influence training, prompt revision, or hyperparameter selection.
+
+Experiments should compare a zero-shot EQA baseline, a model fine-tuned on the raw merged corpus, and a model fine-tuned on the QC-filtered corpus. All systems should be evaluated on the same gold subset using EM, token-level F1, and an explicit no-answer metric. Results should be disaggregated by question type. Confidence intervals and paired comparisons should be used to quantify uncertainty in model differences.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Generation and Automatic QC Outcomes}
+
+A total of [N] robbery-report contexts generated [N] candidate QA pairs. Of these, [N] originated from [Generator A] and [N] from [Generator B]. The automatic QC procedure retained [N] records with valid schema, literal answer support, and consistent answer offsets. A total of [N] records were labeled as unanswerable, and [N] answerable records were flagged for elevated semantic risk. Table~\ref{tab:qc-results} must be completed using the executed notebook outputs.
+
+\begin{table}[!t]
+\caption{Generation and automatic quality-control outcomes. Replace placeholders with measured values.}
+\label{tab:qc-results}
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+Measure & Generator A & Generator B & Combined \\
+\midrule
+Source contexts & [--] & [--] & [--] \\
+Candidate QA pairs & [--] & [--] & [--] \\
+Answerable candidates & [--] & [--] & [--] \\
+Unanswerable candidates & [--] & [--] & [--] \\
+Literal-span valid & [--] & [--] & [--] \\
+Offset valid & [--] & [--] & [--] \\
+Passed automatic QC & [--] & [--] & [--] \\
+Flagged for semantic risk & [--] & [--] & [--] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Semantic Audit Results}
+
+The stratified semantic audit included [N] QA pairs. Overall, [X\%] were judged correct, with a 95\% confidence interval of [lower, upper]. The most frequent error categories were [error type] and [error type]. The final manuscript should report these outcomes by question type, answerability status, and generator model. This analysis is necessary because an aggregate literal-match rate can conceal category-specific semantic failures.
+
+\begin{table}[!t]
+\caption{Semantic audit results by QA category. Replace placeholders with observed audit values.}
+\label{tab:audit-results}
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Question type & Audited $n$ & Correct (\%) & Main error type & 95\% CI \\
+\midrule
+Location & [--] & [--] & [--] & [--] \\
+Time & [--] & [--] & [--] & [--] \\
+Stolen objects & [--] & [--] & [--] & [--] \\
+Monetary value & [--] & [--] & [--] & [--] \\
+Unanswerable cases & [--] & [--] & [--] & [--] \\
+Overall & [--] & [--] & [--] & [--] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{EQA Evaluation on a Human-Verified Gold Set}
+
+Table~\ref{tab:model-results} compares the zero-shot baseline and fine-tuned EQA systems on the human-verified, context-disjoint evaluation set. The primary experimental question is whether a model trained on QC-filtered data provides more reliable performance than a model trained on the raw merged corpus. Any comparison with the metrics reported in the previous publication must clearly indicate differences in data version, split design, and reference-label quality.
+
+\begin{table}[!t]
+\caption{EQA performance on the human-verified, context-disjoint gold set. Replace placeholders with measured values.}
+\label{tab:model-results}
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Model/training condition & EM & Token F1 & No-answer F1 & 95\% CI for F1 \\
+\midrule
+Zero-shot EQA baseline & [--] & [--] & [--] & [--] \\
+Fine-tuned on raw merged data & [--] & [--] & [--] & [--] \\
+Fine-tuned on QC-filtered data & [--] & [--] & [--] & [--] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Discussion}
+\label{sec:discussion}
+
+This paper addresses a central risk in LLM-assisted dataset construction: treating synthetic annotations as reliable once they satisfy a basic output format. The empirical analysis must distinguish structural validity, semantic validity, and downstream model accuracy. Structural validity means that an answer occurs in the context and that its offset is correct. Semantic validity means that the answer actually addresses the question, identifies the correct event, provides sufficient specificity, and correctly represents missing evidence. Downstream accuracy measures whether an EQA model retrieves correct evidence in previously unseen reports. These properties are related but not interchangeable.
+
+The proposed workflow preserves the benefit of LLMs---the ability to generate large pools of candidate QA pairs from unlabeled documents---while adding controls appropriate for legal NLP. Automatic checks ensure reproducible minimum requirements. The semantic audit quantifies residual error and identifies failure modes that can inform stricter filters and improved prompting. A gold evaluation subset prevents final performance claims from depending entirely on labels generated by the same process used to create training data.
+
+EQA should be understood as a decision-support component rather than an autonomous legal system. Its advantage is traceability: each extracted answer can be shown with the source span and surrounding report context. Its limitations include ambiguous narrative text, incomplete reports, source-document errors, model uncertainty, jurisdictional variation, and the possibility of selecting a semantically incorrect but literal span. Practical systems should support abstention, source inspection, correction, logging, and professional oversight.
+
+\section{Threats to Validity and Responsible Use}
+\label{sec:validity}
+
+\paragraph{Construct validity.} EM and F1 measure reference agreement but do not fully measure answer relevance, completeness, or event alignment. The semantic audit complements these metrics.
+
+\paragraph{Internal validity.} Multiple QA pairs derived from one robbery report can cause leakage if they are split independently. Partitioning by \texttt{context\_id} mitigates this risk. Generator versions, prompts, parameters, and retry policies must be preserved for reproducibility.
+
+\paragraph{External validity.} Findings based on robbery reports from Ecuador may not transfer to other criminal offenses, jurisdictions, report templates, or Spanish varieties. Replication must use new context-disjoint material and, ideally, independent annotators.
+
+\paragraph{Responsible use.} The reports may contain sensitive information. The final work must document de-identification, access restrictions, and permissible sharing. The system must not determine culpability, replace legal judgment, or be used without human verification of the returned evidence.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper extends prior work on transformer-based EQA for Spanish robbery reports by evaluating the reliability of the LLM-generated SQuAD v2-style supervision on which such systems depend. The proposed workflow combines candidate generation with automatic span and offset verification, explicit unanswerability labels, semantic auditing, provenance retention, and context-disjoint gold evaluation. The main scientific premise is that a literal span match is necessary but not sufficient for a reliable legal QA annotation. By separating raw, filtered, and human-verified data, the study provides a more rigorous basis for evidence-constrained QA in under-resourced legal settings.
+
+%
+
+
+
+%
+\begin{acknowledgement}
+If you want to include acknowledgments of assistance and the like at the end of an individual chapter please use the \verb|acknowledgement| environment -- it will automatically be rendered in line with the preferred layout.
+\end{acknowledgement}
+%
+\ethics{Competing Interests}{Please declare any competing interests
+in the context of your chapter. The following sentences can be regarded as examples.\newline
+This study was funded by [X] [grant number X].\newline
+ [Author A] has a received research grant from [Company W].\newline
+ [Author B] has received a speaker honorarium from [Company X] and owns stock in [Company~Y].\newline 
+ [Author C] is a member of [committee Z].\newline 
+The authors have no conflicts of interest to declare that are relevant to the content of this chapter.}
+
+\eject
+
+\ethics{Ethics Approval}{If your chapter includes primary studies with humans please declare the adherence of ethical standards. Example text: This study was performed in line with the principles of the Declaration of Helsinki. Approval was granted by the Ethics Committee of University B (Date.../No. ...).\newline 
+ In addition, for human participants, authors are required to include a statement that informed consent (to participate and/or to publish) was obtained from individual participants or parents/guardians if the participant is minor or incapable.\newline
+If animals are studied, authors should make sure that the legal requirements or guidelines in the country and/or state or province for the care and use of animals have been followed or specify that no ethics approval was required.}
+
+\section*{Appendix}
+\addcontentsline{toc}{section}{Appendix}
+%
+%
+When placed at the end of a chapter or contribution (as opposed to at the end of the book), the numbering of tables, figures, and equations in the appendix section continues on from that in the main text. Hence please \textit{do not} use the \verb|appendix| command when writing an appendix at the end of your chapter or contribution. If there is only one the appendix is designated ``Appendix'', or ``Appendix 1'', or ``Appendix 2'', etc. if there is more than one.
+
+\begin{equation}
+a \times b = c
+\end{equation}
+
+% References are managed with BibTeX from references.bib.
+% Each reference is cited in the text with \cite{key}.
+% spmpsci is the Springer numeric citation style for computer science.
+\bibliographystyle{spmpsci}
+\bibliography{references}
+\end{document}
+
+% ============================================================================
+% STYLE REFERENCE -- FIGURES AND TABLES (kept commented for later use)
+% ============================================================================
+% \begin{figure}[t]
+% \sidecaption[t]
+% \includegraphics{figure}
+% \Description{This is figure Alt-Text for Figure grg2.}
+% \caption{If the width of the figure is less than 7.8 cm use the \texttt{sidecaption} command to flush the caption on the left side of the page. If the figure is positioned at the top of the page, align the sidecaption with the top of the figure -- to achieve this you simply need to use the optional argument \texttt{[t]} with the \texttt{sidecaption} command}
+% \label{fig:2}       % Give a unique label
+% \end{figure}
+%
+% % Use the \index{} command to code your index words
+% %
+% % For tables use
+% %
+% \begin{table}[!t]
+% \caption{Please write your table caption here}
+% \label{tab:1}       % Give a unique label
+% %
+% % Follow this input for your own table layout
+% %
+% \begin{tabular}{p{2cm}p{2.4cm}p{2cm}p{4.9cm}}
+% \hline\noalign{\smallskip}
+% Classes & Subclass & Length & Action Mechanism  \\
+% \noalign{\smallskip}\svhline\noalign{\smallskip}
+% Translation & mRNA$^a$  & 22 (19--25) & Translation repression, mRNA cleavage\\
+% Translation & mRNA cleavage & 21 & mRNA cleavage\\
+% Translation & mRNA  & 21--22 & mRNA cleavage\\
+% Translation & mRNA  & 24--26 & Histone and DNA Modification\\
+% \noalign{\smallskip}\hline\noalign{\smallskip}
+% \end{tabular}
+% $^a$ Table foot note (with superscript)
+% \end{table}
+% ============================================================================
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: t
+%%% End:
