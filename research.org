@@ -345,6 +345,20 @@ Conclusions:
      --output-dir out_experiments/paper_replication
    #+end_src
 
+   In case we need to run in multi gpu setup:
+   #+begin_src shell
+   bash scripts/run_ablation_multi_gpu.sh \
+     --gpus "0 1 2 3 4 5 6 7" \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es \
+     --dataset merged --mode ft \
+     --hf-dataset LeninGF/robos-question-answering \
+     --hf-schema legacy --split-mode row \
+     --epochs 10 --lr 2e-5 \
+     --per-device-train-batch-size 64 --per-device-eval-batch-size 64 \
+     --weight-decay 0.01 --fp16 \
+     --output-dir out_experiments/paper_replication
+   #+end_src
+
 3. ZSL baseline on the same paper dataset (for the paper's Table 4 comparison):
 
    #+begin_src bash
@@ -602,3 +616,108 @@ Notes:
   --zsl-gpu so ZSL/FT never contend.
 - With --push-model and no --model-repo-id, each FT model gets an auto-generated
   HF repo name LeninGF/qa-<dataset>-<model>-ft-<timestamp>.
+
+** Incident log: Option B interrupted on XLM-Roberta (tokenizer deps)
+
+The first Option B run died mid-matrix: deepset/xlm-roberta-base-squad2 failed at
+AutoTokenizer.from_pretrained because the conda env lacked protobuf and tiktoken.
+transformers' slow tokenizer conversion needs these to read the SentencePiece
+(then fallback tiktoken) model. The rest of the matrix never ran.
+
+To avoid re-running the 4 experiments that had already finished, we added a
+--resume option to scripts/run_option_b_multi_gpu.sh (opt-in; backward
+compatible). It detects completed runs by the existence of
+$OUT_DIR/<model__name>/merged/<mode>/metrics_summary.json and skips them.
+On restart it reported: 8 total, 4 completed, 4 pending.
+
+Steps carried out after the interruption:
+
+1. Update the environment with the missing packages:
+   #+begin_src bash
+   conda env update -n pyt-eqa-fge -f environment.yml   # or pip install protobuf tiktoken
+   #+end_src
+
+2. Run the smoke test to confirm tokenizer loading no longer fails (incl. the
+   previously broken model):
+   #+begin_src bash
+   bash scripts/smoke_check_env.sh
+   # expected: [ok] tokenizer deepset/xlm-roberta-base-squad2: XLMRobertaTokenizer ...
+   #+end_src
+
+3. Restart the interrupted matrix with resume, which skips the 4 done experiments
+   and runs only the 4 missing ones (deepset + distill, zsl + ft):
+   #+begin_src bash
+   nohup bash scripts/run_option_b_multi_gpu.sh --resume \
+     --gpus "0 1 2 3 4 5 6 7" --epochs 10 --early-stopping-patience 3 --lr 1e-5 \
+     --hf-dataset LeninGF/question-answering-robbery-m2 --push-model \
+     --output-dir out_experiments/option_b_abblation \
+     > logs_option_b_abblation/option_b.log 2>&1 &
+   #+end_src
+
+4. Monitor progress:
+   #+begin_src bash
+   tail -f logs_option_b_abblation/option_b.log
+   grep -E "=== Model:|^  \[ZSL\]|^  \[FT\]|exact=" logs_option_b_abblation/option_b.log
+   #+end_src
+
+* 2026-09-01 Incident log: Option B final FT push failed (HF repo id too long)
+
+The resumed Option B matrix finished all 8 experiments (4 models x merged x
+{zsl, ft}), but the last fine-tuned model (mrm8488/distill-bert-base-spanish-
+wwm-cased-finetuned-spa-squad2-es) failed when pushing to the Hub:
+
+- The auto-generated repo id
+  LeninGF/qa-merged-mrm8488__distill-...-ft-20260901_042912 was 105 characters,
+  over Hugging Face's 96-character limit (error: HFValidationError).
+- Root cause: run_qa_ablation.py built the repo id from the full sanitized model
+  name (sanitize_model), which is too long for this model.
+
+Fix applied:
+- Added auto_model_repo_id() to scripts/run_qa_ablation.py. It truncates the
+  model part (with a sha1 fallback) so the generated repo id always fits the
+  96-character limit. Also fixed model_short() to sanitize '/' before splitting.
+- Added scripts/push_completed_model.py to re-push an already-saved model dir
+  without retraining.
+
+Resolution (2026-09-01):
+- We did NOT repeat the last experiment: the log showed "Best model saved to
+  .../merged/ft/model" before the push failure, so the fine-tuned weights were
+  already written locally on the server; the test metrics (exact=0.3553,
+  f1=0.3860) matched the log output, so the data seems correct.
+- We used scripts/push_completed_model.py to push the saved distill FT model to
+  the Hub with a short, valid repo id.
+- All 8 Option B ablation experiments are complete; no further training runs
+  are pending.
+
+* 2026-09-01 M2 dataset card: LeninGF/question-answering-robbery-m2
+
+The final M2 dataset pushed to the Hugging Face Hub is
+=LeninGF/question-answering-robbery-m2=. It contains context-level
+train/validation/test splits plus the 200-row gold audit subset, all with
+SQuAD v2 schema:
+
+#+begin_example
+DatasetDict({
+    train: Dataset({
+        features: ['id', 'context', 'question', 'is_impossible', 'answers', 'context_id'],
+        num_rows: 64439
+    })
+    validation: Dataset({
+        features: ['id', 'context', 'question', 'is_impossible', 'answers', 'context_id'],
+        num_rows: 8012
+    })
+    test: Dataset({
+        features: ['id', 'context', 'question', 'is_impossible', 'answers', 'context_id'],
+        num_rows: 8109
+    })
+    gold_test: Dataset({
+        features: ['id', 'context', 'question', 'is_impossible', 'answers', 'context_id'],
+        num_rows: 200
+    })
+})
+#+end_example
+
+In [4]: print({k:len(v) for k,v in ds.items()})
+#+begin_example
+{'train': 64439, 'validation': 8012, 'test': 8109, 'gold_test': 200}
+#+end_example
