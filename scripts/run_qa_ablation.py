@@ -146,7 +146,31 @@ def sanitize_model(model: str) -> str:
 
 def model_short(model: str) -> str:
     """Short stable label, e.g. mrm8488__bert-base-spanish-wwm-..."""
-    return sanitize_model(model).split("__")[-1][:50] if "__" in model else model
+    sanitized = sanitize_model(model)
+    return sanitized.split("__")[-1][:50] if "__" in sanitized else sanitized
+
+
+def auto_model_repo_id(model_id: str, dataset: str, namespace: str = "LeninGF") -> str:
+    """Build an HF repo id that always fits Hugging Face's 96-char limit.
+
+    The old format used sanitize_model(model_id) verbatim, which can exceed the
+    limit for long model names (e.g. the distill-bert-...-squad2-es model produced
+    a 105-char repo id and HF rejected it). This helper truncates the model part
+    deterministically, falling back to a short sha1 digest if the name is too long.
+    """
+    import datetime
+    import hashlib
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    prefix = f"qa-{dataset}-"
+    suffix = f"-ft-{stamp}"
+    max_short = 96 - len(namespace) - 1 - len(prefix) - len(suffix)
+    short = model_short(model_id).strip("-_")
+    if len(short) > max_short:
+        digest = hashlib.sha1(model_id.encode()).hexdigest()[:8]
+        head_len = max_short - len(digest) - 1
+        short = f"{short[:head_len]}-{digest}"
+    return f"{namespace}/{prefix}{short}{suffix}"
 
 
 def default_output_dir() -> str:
@@ -773,9 +797,7 @@ def run_one_experiment(args, model_id, dataset, mode, output_root, qa_utils):
 
             if getattr(args, "push_model", False):
                 if not args.model_repo_id:
-                    import datetime
-                    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                    args.model_repo_id = f"LeninGF/qa-{dataset}-{sanitize_model(model_id)}-ft-{stamp}"
+                    args.model_repo_id = auto_model_repo_id(model_id, dataset)
                 from dotenv import load_dotenv
                 from huggingface_hub import login
 
