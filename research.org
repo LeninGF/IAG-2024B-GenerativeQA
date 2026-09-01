@@ -721,3 +721,51 @@ In [4]: print({k:len(v) for k,v in ds.items()})
 #+begin_example
 {'train': 64439, 'validation': 8012, 'test': 8109, 'gold_test': 200}
 #+end_example
+
+** Running Paper replication
+We use the following commands to run a zero shot learning evaluation
+of the original ICA paper and then a fine tuning replication. It seems
+we get the same results. Fine tuning seems to improve over the zero
+shot learning setting but this seems to be related with the main
+reason that the dataset used always has an answer which is differ from
+this extended chapter research intention. The following were the
+commands used. Also we had to solve some problems when processing the
+legacy dataset. Also running it in 8 gpus in parallel made possible to
+solve the training in minutes. However, checking the results, it seems
+the model is prone to overfit. Also it is important to notice that
+data split is random and not by context. hence, we may expect the same
+context in both places which can produced improved results due to a
+data leakage.
+
+#+begin_src shell
+bash scripts/run_ablation_multi_gpu.sh     \
+     --gpus "0 1 2 3 4 5 6 7"     \
+     --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es     \
+     --dataset merged \
+     --mode ft      \
+     --hf-dataset LeninGF/robos-question-answering      \
+     --hf-schema legacy \
+     --split-mode row     \
+     --epochs 10 \
+     --lr 2e-5      \
+     --per-device-train-batch-size 16 \
+     --per-device-eval-batch-size 16      \
+     --weight-decay 0.01 \
+     --fp16      \
+     --output-dir out_experiments/paper_replication
+#+end_src
+
+for the zero shot evaluation
+
+#+begin_src shell
+
+python scripts/run_qa_ablation.py     \
+       --model mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es      \
+       --dataset merged \
+       --mode zsl \
+       --gpu 0      \
+       --hf-dataset LeninGF/robos-question-answering      \
+       --hf-schema legacy \
+       --split-mode row      \
+       --output-dir out_experiments/paper_replication
+#+end_src
