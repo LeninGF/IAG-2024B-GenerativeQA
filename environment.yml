@@ -23,3 +23,9 @@ dependencies:
       - tqdm
       - matplotlib
       - seaborn
+      # Required by slow-tokenizer conversion (e.g. deepset/xlm-roberta-base-squad2
+      # SentencePiece -> tokenizers). Missing protobuf/tiktoken breaks
+      # AutoTokenizer.from_pretrained with an ImportError.
+      - protobuf
+      - tiktoken
+      - sentencepiece
