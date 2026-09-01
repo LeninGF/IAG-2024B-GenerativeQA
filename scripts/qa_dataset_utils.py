@@ -161,7 +161,7 @@ def _legacy_to_squad2(rec: dict) -> dict:
     else:
         rec["answers"] = {
             "text": [str(rec.get("answer_text") or "").strip()],
-            "answer_start": [int(rec.get("answer_start") or -1)],
+            "answer_start": [-1 if rec.get("answer_start") is None else int(rec["answer_start"])],
         }
 
     if not rec.get("context_id"):
