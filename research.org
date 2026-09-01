@@ -553,3 +553,52 @@ ablation matrix: there, launching independent jobs one-per-GPU via
 =scripts/run_ablation_parallel.sh= maximizes *total* throughput across all runs,
 versus DDP-ing one job at a time sequentially. The two statements are not in
 conflict: DDP for one run, independent-parallel for the many-run matrix.
+
+** Running Option B in the background with nohup + checking progress
+
+Recommended way to run the 8-experiment Option B matrix without blocking a
+terminal, with logs you can tail:
+
+- mkdir -p for logs, launch with nohup, and capture both stdout/stderr:
+
+  #+begin_src bash
+  mkdir -p logs_option_b
+  nohup bash scripts/run_option_b_multi_gpu.sh \
+    --gpus "0 1 2 3 4 5 6 7" \
+    --epochs 10 --early-stopping-patience 3 --lr 1e-5 \
+    --hf-dataset LeninGF/question-answering-robbery-m2 \
+    --push-model \
+    --output-dir out_experiments/option_b_abblation \
+    > logs_option_b_abblation/option_b.log 2>&1 &
+
+  echo "Launched PID $!"
+  #+end_src
+
+- Check that it is running and watch live output:
+
+  #+begin_src bash
+  ps aux | grep -E "run_option_b|torchrun|run_qa_ablation" | grep -v grep
+  tail -f logs_option_b/option_b.log
+  #+end_src
+
+- See which experiment is currently running and what has finished:
+
+  #+begin_src bash
+  grep -E "=== Model:|^  \[ZSL\]|^  \[FT\]|exact=" logs_option_b_abblation/option_b
+.log
+  ls -dt out_experiments/option_b/*/merged/*/ 2>/dev/null | head
+  #+end_src
+
+- Kill it if needed (stop all children):
+
+  #+begin_src bash
+  pkill -f "run_option_b_multi_gpu.sh" || true
+  pkill -f "run_qa_ablation.py" || true
+  #+end_src
+
+Notes:
+- ZSL runs first on GPU 0 and completes before each model's FT; no overlap.
+- If launching multiple Option B processes, use disjoint --gpus and distinct
+  --zsl-gpu so ZSL/FT never contend.
+- With --push-model and no --model-repo-id, each FT model gets an auto-generated
+  HF repo name LeninGF/qa-<dataset>-<model>-ft-<timestamp>.
