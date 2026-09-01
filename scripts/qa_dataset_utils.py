@@ -159,9 +159,20 @@ def _legacy_to_squad2(rec: dict) -> dict:
     if rec["is_impossible"]:
         rec["answers"] = {"text": [], "answer_start": []}
     else:
+        raw_text = str(rec.get("answer_text") or "")
+        text = raw_text.strip()
+        start = -1 if rec.get("answer_start") is None else int(rec["answer_start"])
+        # Legacy rows sometimes include surrounding whitespace in answer_text
+        # while answer_start points at the raw (untrimmed) span. After stripping
+        # the text, adjust the offset so it still points at the answer.
+        if start >= 0 and text != raw_text:
+            if not context.startswith(text, start):
+                leading_ws = len(raw_text) - len(raw_text.lstrip())
+                if context.startswith(text, start + leading_ws):
+                    start += leading_ws
         rec["answers"] = {
-            "text": [str(rec.get("answer_text") or "").strip()],
-            "answer_start": [-1 if rec.get("answer_start") is None else int(rec["answer_start"])],
+            "text": [text],
+            "answer_start": [start],
         }
 
     if not rec.get("context_id"):
