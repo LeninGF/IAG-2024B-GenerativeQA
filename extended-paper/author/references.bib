@@ -180,14 +180,17 @@
 % Do not cite the chapter as unpublished work; use the final Springer DOI/book
 % chapter metadata once assigned.
 % Author: review and updated
+% MANUALLY CHECK: front matter states CCIS 2934, pp. 1--12; verify final pagination on SpringerLink.
 @inproceedings{falconi2026robberyqa,
 	title        = {Leveraging Transformer Models for Extractive Question Answering in Criminal Report Analysis},
 	author       = {Falconi, Lenin G. and L{\'o}pez, Lorena Isabel Barona and Hernandez-Alvarez, Myriam},
 	year         = 2026,
 	booktitle    = {Internet Computing, Internet of Things, Artificial Intelligence, and Applications},
 	publisher    = {Springer Nature Switzerland},
+	series       = {Communications in Computer and Information Science},
+	volume       = {2934},
 	address      = {Cham},
-	pages        = {222--233},
+	pages        = {1--12},
 	isbn         = {978-3-032-22190-2},
 	editor       = {Arabnia, Hamid R. and Deligiannidis, Leonidas and Ferens, Ken and Ghareh Mohammadi, Farid and Shenavarmasouleh, Farzan and Amirian, Soheyla},
 	abstract     = {Transformer-based models have greatly advanced extractive question answering (EQA) in NLP, but their application to legal document analysis remains underexplored. This paper introduces a domain-adapted BERT model for EQA on Spanish-language robbery case reports from Ecuador's Prosecutor's Office (Fiscal{\'i}a General del Estado). We used generative artificial intelligence to synthesize a SQuAD-format dataset tailored to robbery cases. The pre-trained BERT model was first evaluated in a zero-shot setting on this dataset, then further fine-tuned for the specific domain. The fine-tuned model outperformed the base version, achieving a final F1-score of 82.88. Our results demonstrate the effectiveness of transformer-based models, both in zero-shot and fine-tuned settings, for EQA tasks in legal language processing. These advancements highlight the potential to enhance information retrieval and optimize workloads in judicial systems, ultimately improving service delivery to communities.}
@@ -246,16 +249,34 @@
 
 @misc{glm_reviewer_hf,
   author       = {{Zhipu AI}},
-  title        = {{GLM} model used as artificial reviewer (reviewer id: computer-v1)},
+  title        = {{GLM}-4.6 (Z.ai)},
   howpublished = {Hugging Face model hub},
   year         = {2025},
-  note         = {Short name used in the chapter: GLM-5.3. Exact GLM checkpoint to be confirmed; reviewer identifier used in the audit is computer-v1.}
+  note         = {https://huggingface.co/zai-org/GLM-4.6. Used in this study as the automated reviewer (Reviewer-LLM, R1).}
 }
 
 % ============================================================================
 % NEW ADDITIONS -- ACADEMIC PAPERS FOR THE MODELS USED IN THIS RESEARCH
 % Manually check the bibliographic details before submission.
 % ============================================================================
+@article{glm45_techreport,
+  author  = {Zeng, Aohan and others},
+  title   = {{GLM}-4.5: Agentic, Reasoning, and Coding {(ARC)} Foundation Models},
+  journal = {arXiv preprint arXiv:2508.06471},
+  year    = {2025},
+  note    = {Technical report reused by the GLM-4.6 model card; cited for the reviewer model.}
+}
+
+@article{zheng2023judge,
+  author  = {Zheng, Lianmin and Chiang, Wei-Lin and Sheng, Ying and Zhuang, Siyuan and Wu, Zhanghao and Zhuang, Yonghao and Lin, Zi and Li, Zhuohan and Li, Dacheng and Xing, Eric P. and others},
+  title   = {Judging {LLM}-as-a-Judge with {MT}-Bench and Chatbot Arena},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {36},
+  pages   = {46595--46623},
+  year    = {2023},
+  note    = {LLM-as-judge paradigm cited in the Theoretical Background.}
+}
+
 @inproceedings{CaneteCFP2020,
   author    = {Ca{\~n}ete, Jos{\'e} and Chaperon, Gabriel and Fuentes, Rodrigo and Ho, Jou-Hui and Kang, Hojin and P{\'e}rez, Jorge},
   title     = {Spanish Pre-Trained {BERT} Model and Evaluation Data},

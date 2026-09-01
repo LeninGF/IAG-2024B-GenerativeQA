@@ -72,12 +72,12 @@ Lorena Isabel Barona López\orcidID{0000-0002-5184-3759}}
 % used in your e-mail or web address
 %
 \maketitle
-\abstract*{Extractive question answering (EQA) can facilitate the retrieval of salient facts from criminal reports, including the location and time of an incident, stolen objects, and reported economic losses. Its reliability, however, depends on the semantic quality of the question--answer annotations used for training and evaluation. Our prior work showed that a Spanish transformer model fine-tuned on a generatively constructed dataset can retrieve answer spans from robbery reports. This paper extends that study by examining the reliability of the data-generation stage itself. We construct a SQuAD v2-style resource from Spanish robbery narratives using open large language models (LLMs), automatic answer-span checks, and a stratified artificial audit (LLM-as-judge). The proposed workflow validates literal span occurrence and answer offsets, represents unanswerable questions explicitly, and identifies semantic errors that are not detected by string matching alone. These errors include responses with an incorrect semantic type, partial answers, temporal references associated with a different event, and answers supplied when the context does not support one. We propose separate raw, filtered, and LLM-audited dataset versions to support reproducible model development and more credible evaluation. The paper positions LLMs as controlled generators of candidate supervision rather than unquestioned annotation authorities for legal EQA.
+\abstract*{Extractive question answering (EQA) can facilitate the retrieval of salient facts from criminal reports, including the location and time of an incident, stolen objects, and reported economic losses. Its reliability, however, depends on the semantic quality of the question--answer annotations used for training and evaluation. Our prior work showed that a Spanish transformer model fine-tuned on a generatively constructed dataset can retrieve answer spans from robbery reports. This study extends that work by examining the reliability of LLM-generated SQuAD v2-style supervision itself. We propose a methodology that uses two open LLMs to generate candidate question--answer pairs from Spanish robbery narratives, applies deterministic checks for schema conformance, literal span support, offset consistency, duplication, and answerability, and complements these checks with a semantic review performed by a third, independent LLM acting as a simulated annotator over a stratified sample. We evaluate the resulting dataset with a context-disjoint train/validation/test split and four pretrained extractive QA encoders under zero-shot and fine-tuned settings, and we replicate the original study's evaluation protocol on its own dataset to compare methodologies directly. The results show that literal span validity is a necessary but not sufficient condition for reliable synthetic EQA supervision, that fine-tuning under a realistic, abstention-inclusive benchmark yields lower but more defensible performance than the original proof-of-concept result, and that both dataset composition and evaluation design materially affect reported scores. We conclude with a reusable quality-control and review protocol for LLM-synthesized supervision in other under-resourced, sensitive-text domains.
 \keywords{Extractive question answering $\cdot$ Legal NLP $\cdot$
   Synthetic data $\cdot$ SQuAD v2 $\cdot$ Large language models $\cdot$
   Dataset quality}}
 
-\abstract{Extractive question answering (EQA) can facilitate the retrieval of salient facts from criminal reports, including the location and time of an incident, stolen objects, and reported economic losses. Its reliability, however, depends on the semantic quality of the question--answer annotations used for training and evaluation. Our prior work showed that a Spanish transformer model fine-tuned on a generatively constructed dataset can retrieve answer spans from robbery reports. This paper extends that study by examining the reliability of the data-generation stage itself. We construct a SQuAD v2-style resource from Spanish robbery narratives using open large language models (LLMs), automatic answer-span checks, and a stratified artificial audit (LLM-as-judge). The proposed workflow validates literal span occurrence and answer offsets, represents unanswerable questions explicitly, and identifies semantic errors that are not detected by string matching alone. These errors include responses with an incorrect semantic type, partial answers, temporal references associated with a different event, and answers supplied when the context does not support one. We propose separate raw, filtered, and LLM-audited dataset versions to support reproducible model development and more credible evaluation. The paper positions LLMs as controlled generators of candidate supervision rather than unquestioned annotation authorities for legal EQA.
+\abstract{Extractive question answering (EQA) can facilitate the retrieval of salient facts from criminal reports, including the location and time of an incident, stolen objects, and reported economic losses. Its reliability, however, depends on the semantic quality of the question--answer annotations used for training and evaluation. Our prior work showed that a Spanish transformer model fine-tuned on a generatively constructed dataset can retrieve answer spans from robbery reports. This study extends that work by examining the reliability of LLM-generated SQuAD v2-style supervision itself. We propose a methodology that uses two open LLMs to generate candidate question--answer pairs from Spanish robbery narratives, applies deterministic checks for schema conformance, literal span support, offset consistency, duplication, and answerability, and complements these checks with a semantic review performed by a third, independent LLM acting as a simulated annotator over a stratified sample. We evaluate the resulting dataset with a context-disjoint train/validation/test split and four pretrained extractive QA encoders under zero-shot and fine-tuned settings, and we replicate the original study's evaluation protocol on its own dataset to compare methodologies directly. The results show that literal span validity is a necessary but not sufficient condition for reliable synthetic EQA supervision, that fine-tuning under a realistic, abstention-inclusive benchmark yields lower but more defensible performance than the original proof-of-concept result, and that both dataset composition and evaluation design materially affect reported scores. We conclude with a reusable quality-control and review protocol for LLM-synthesized supervision in other under-resourced, sensitive-text domains.
 \keywords{Extractive question answering $\cdot$ Legal NLP $\cdot$
   Synthetic data $\cdot$ SQuAD v2 $\cdot$ Large language models $\cdot$
   Dataset quality}}
@@ -87,55 +87,48 @@ Lorena Isabel Barona López\orcidID{0000-0002-5184-3759}}
 \section{Introduction}
 \label{sec:introduction}
 
-Criminal reports contain relevant facts for institutional and investigative work, but these facts are usually embedded in heterogeneous narrative descriptions. Information such as where an incident occurred, when it happened, which objects were stolen, and what economic value was reported may appear alongside witness accounts, procedural statements, contact information, vehicle descriptions, and spelling inconsistencies. Systems that retrieve evidence-supported facts from these documents could reduce the effort needed to review large collections of reports and support, rather than replace, professional analysis.
+Robbery is a high-volume crime in Ecuador: the Fiscal\'ia General del Estado recorded 67{,}705 reported robberies in 2024, approximately 376 per 100{,}000 inhabitants~\cite{falconi2026robberyqa}. Extractive question answering (EQA) can support investigations, insurance claims, and public-safety planning by returning evidence-backed facts---the location and time of an incident, the stolen objects, and the reported value---directly from narrative reports. EQA is appropriate for this setting because it constrains the output to a contiguous span of the provided report, so every returned answer is traceable to the source text rather than being composed token by token.
 
-Extractive question answering (EQA) is appropriate for this problem because it constrains the output to a span from a provided context. Given a question and a report, an EQA model predicts the start and end positions of the answer in the original narrative. This differs from generative question answering, whose output is composed token by token and may not occur in the evidence. The extractive constraint is valuable in legal and institutional settings: users can inspect the textual basis of a returned answer rather than relying on a fluent but potentially unsupported summary.
+Our prior work demonstrated the feasibility of this approach: a Spanish BERT-based EQA model fine-tuned on a generatively constructed SQuAD-style dataset improved the reported F1 score from 81.70 to 82.88~\cite{falconi2026robberyqa}. That proof of concept left three questions open: whether the synthesized supervision was semantically reliable, whether the evaluation protocol was free of data leakage, and whether the result generalizes across encoder families. This study addresses exactly those gaps.
 
-In our previous work, we investigated transformer-based EQA for Spanish robbery reports from Ecuador. We used generative artificial intelligence to construct a SQuAD-style dataset and evaluated a Spanish BERT-based QA model in zero-shot and fine-tuned settings. Fine-tuning improved the reported F1 score from 81.70 to 82.88, indicating that domain-specific supervision can improve fact extraction from robbery narratives \cite{falconi2026robberyqa}. While that work established the feasibility of the task, it also raised an important methodological question: how reliable are the automatically generated QA annotations used to train and evaluate the system?
+The underlying concern is that a generated answer can be fluent, syntactically valid, and even occur literally in the source text while failing to answer the intended question. A distance may be returned as a location, a time associated with parking a vehicle may be confused with the time of the robbery, or a generic phrase may be selected despite the absence of an informative answer. Literal string matching and a correct character offset are therefore necessary but not sufficient conditions for reliable synthetic EQA supervision. This thesis connects the quality-control stage, the LLM-based semantic review, and the evaluation results throughout the study.
 
-This question matters whenever LLMs are used to construct supervision. A generated answer can be fluent, syntactically valid, and even occur literally in the source text while failing to answer the intended question. A distance may be returned as a location, a time associated with parking a vehicle may be confused with the time of the robbery, or a generic phrase may be selected despite the absence of an informative answer. Literal matching and a valid answer offset are necessary for extractive QA data, but they are not sufficient for semantic correctness.
+The study is organized around four research questions:
+\begin{itemize}
+\item \textbf{RQ1.} Can open LLMs construct usable SQuAD v2-style EQA supervision from unlabeled Spanish robbery reports at scale, without per-example human authoring?
+\item \textbf{RQ2.} Are literal-span validity and correct character offsets sufficient evidence that a generated question--answer pair is semantically correct, or is a further, independent review step required to detect errors that string matching cannot see?
+\item \textbf{RQ3.} Does the constructed resource support effective extractive QA fine-tuning across encoder families and capacities, when evaluated under a leakage-free, context-disjoint protocol and against an independent, LLM-reviewed evaluation subset?
+\item \textbf{RQ4.} Under a corrected, leakage-free evaluation protocol, does the original study's headline result still hold, and what specific factors---dataset composition, split methodology, and metric implementation---explain any discrepancy?
+\end{itemize}
 
-This paper extends the earlier study by treating data quality and answerability as central experimental variables. It generates candidate SQuAD v2-style instances using open LLMs, applies reproducible structural quality controls, conducts a stratified artificial audit, and establishes a context-disjoint, LLM-audited evaluation subset. The contributions are as follows:
+The main contributions of this study are:
 \begin{enumerate}
-\item A multi-model pipeline for generating candidate SQuAD v2-style QA pairs from Spanish robbery reports.
-\item Automatic checks for schema validity, literal span support, answer-offset consistency, duplication, and explicit unanswerability.
-\item A stratified artificial audit (LLM-as-judge) that distinguishes structural span validity from semantic QA correctness.
-\item A reproducible evaluation protocol that separates raw synthetic data, quality-filtered training data, and an LLM-audited gold test set.
+\item \textbf{An LLM-based methodology for synthetic SQuAD v2 construction} from Spanish robbery narratives, producing answerable and unanswerable EQA instances with answer-span offsets and generator provenance.
+\item \textbf{A reproducible quality-control protocol} (structural integrity $\rightarrow$ extractive validity $\rightarrow$ abstention consistency $\rightarrow$ span distribution/usefulness $\rightarrow$ inter-generator agreement) that filters raw LLM output into \texttt{strict}, \texttt{expanded}, and \texttt{merged} dataset variants before any human or LLM review is needed.
+\item \textbf{An LLM-based reviewer protocol for semantic reliability assessment}, using a second, independent LLM as a simulated annotator over a stratified sample, with an explicit error typology (wrong semantic type, wrong event reference, partial location, incomplete object list, answered-when-unanswerable, incorrect impossible, false abstention, other) and Wilson-score confidence intervals, explicitly distinguishing structural validity from semantic correctness.
+\item \textbf{A leakage-aware evaluation protocol} using context-disjoint train/validation/test partitions and a held-out, LLM-reviewed evaluation subset, correcting the row-level, test-set-leaking split used in the original proof-of-concept study.
+\item \textbf{A four-model extractive QA ablation} (two Spanish BETO variants, a multilingual XLM-Roberta model, and a distilled BETO model) comparing zero-shot and fine-tuned performance, including training-dynamics diagnostics (overfitting behavior, early stopping, no-answer threshold calibration) that the original study did not report.
+\item \textbf{A direct, controlled replication of the original study's result}, run under the new codebase, that reproduces its headline number and then shows, on the same trained model, why that number does not hold under the new, harder, leakage-free benchmark---turning the original result into a diagnosed baseline rather than a competitor to be beaten.
 \end{enumerate}
 
-\section{Scientific Background and Related Work}
+Compared with the original paper, this study differs in the title and abstract, the dataset (SQuAD v2 with explicit unanswerability versus an all-answerable SQuAD-style resource), the generation stage (two generators with quality control versus a single unverified generator), the split methodology (context-level and leakage-free versus row-level), the number of models evaluated (four encoders versus one), and the evaluation depth (semantic review, threshold calibration, training-dynamics diagnostics, and a controlled replication).
+
+\section{Theoretical Background}
 \label{sec:related-work}
 
-\subsection{Extractive Question Answering and Unanswerability}
+\subsection{Foundational Concepts}
+\label{sec:foundations}
 
-Question answering comprises tasks that differ in the evidence available to the system and in the expected answer form. In open-domain QA, a system must retrieve evidence from a large corpus. In reading-comprehension QA, the context is provided alongside the question. EQA is a reading-comprehension formulation in which the answer must be a contiguous span in the supplied context. Given a tokenized context $C=(c_1,\ldots,c_n)$ and a question $Q$, an extractive reader estimates a start and end position:
-\begin{equation}
-(s^*,e^*) = \arg\max_{1 \leq s \leq e \leq n} P(s,e\mid C,Q),
-\label{eq:eqa}
-\end{equation}
-where the final answer is $c_{s^*:e^*}$. This formulation provides a direct provenance relation: the answer is traceable to a particular segment of the document.
+\subsubsection{Language Models, Transformers, and Generative AI}
 
-The Stanford Question Answering Dataset (SQuAD) established a widely adopted benchmark for extractive machine comprehension by pairing natural-language questions with answer spans in Wikipedia passages \cite{rajpurkar2016squad}. SQuAD also popularized exact match (EM) and token-level F1 as evaluation metrics. EM evaluates strict agreement after normalization, whereas token F1 measures the overlap between tokens in predicted and reference answers. These metrics are useful only insofar as the reference answer is itself semantically appropriate; a noisy reference may penalize a valid model prediction or reward an incorrect extraction.
-
-SQuAD v2 expanded the task by adding adversarially written unanswerable questions \cite{rajpurkar2018know}. Thus, a model must decide not only which span is relevant, but also whether the provided context contains evidence for any answer. This selective-prediction property is particularly important in robbery reports. A narrative may mention several times without stating the robbery time, describe a location only vaguely, or omit a monetary value altogether. A system that is forced to return a substring in every case is likely to generate unsupported extractions.
-
-Multilingual QA research confirms that extractive methods can be evaluated beyond English. MLQA includes Spanish among its languages and provides a benchmark for cross-lingual extractive QA \cite{lewis2020mlqa}. However, multilingual resources do not remove the need for domain-specific data. Spanish robbery reports often contain informal grammar, regional expressions, abbreviations, typographical errors, multiple events, and ambiguous references. These properties differ markedly from the encyclopedic passages used in general QA benchmarks and motivate a domain-sensitive construction and validation protocol.
-
-\subsection{Transformers and Evidence-Based Legal NLP}
-
-Transformer architectures use self-attention to learn context-dependent representations and have become the foundation of modern language understanding systems \cite{vaswani2017attention}. Encoder models such as BERT can be adapted to EQA by producing token representations from the combined question and context and then estimating start and end distributions over the context tokens \cite{devlin2019bert}. The architecture is well suited to evidence-based fact retrieval because it predicts positions in the original document rather than freely generating an answer.
-
-The legal domain presents specific challenges for NLP, including specialized language, jurisdictional variation, long documents, incomplete standardization, sensitive data, and limited expert annotations. Recent work surveying transformer-based legal text processing documents the growing use of these models for classification, retrieval, prediction, and question answering, while stressing the importance of reliable task definitions and evaluation \cite{greco2024transformerlegal}. Legal NLP surveys likewise identify data availability, interpretability, and transfer across legal systems as central methodological concerns \cite{niklaus2021legalnlp}.
-
-Legal benchmarks have increased multilingual coverage, but coverage remains uneven across jurisdictions and tasks. LEXTREME provides a multilingual and multi-task legal benchmark, illustrating both the progress and the fragmentation of legal NLP evaluation resources \cite{niklaus2023lextreme}. For Spanish, Legal-ES provides large-scale data for legal text processing from legislative, administrative, and jurisprudential sources \cite{gonzalez2020legales}. These resources are relevant to Spanish legal language, yet they differ from the incident-oriented, often first-person narratives analyzed in this research. The objective here is not to generate legal advice or interpret statutes; it is to retrieve evidence-supported facts from robbery reports.
-
-Related work on legal information retrieval and entailment further motivates traceable methods. Kim et al. apply transformer-based approaches to case-law retrieval and legal entailment in the COLIEE setting \cite{kim2024legalir}. Although that task differs from short-span extraction, both tasks require a system to ground its output in legal textual evidence. EQA offers a direct and inspectable evidence mechanism because the predicted answer is a span in the source narrative.
-
-Our previously published study contributes to this line by applying a Spanish BERT-based EQA model to robbery reports and using generative AI to create an initial SQuAD-format resource \cite{falconi2026robberyqa}. The present paper extends rather than replaces that work. Its new focus is the reliability of synthetic supervision: it distinguishes whether a span is structurally valid from whether it actually answers the question, refers to the correct robbery event, and provides sufficient information for the intended information need.
-
-\subsection{LLMs for Synthetic QA Data Generation}
-
-Large language models can produce candidate labels, instructions, summaries, and QA pairs at a scale that is difficult to achieve through exclusive manual annotation. This capability is particularly valuable for low-resource domains such as Spanish criminal narratives, where specialized annotation requires time and may be restricted by data sensitivity. LLMs can be prompted to identify a question, an answer string, an answer position, and an answerability label, creating records compatible with the SQuAD v2 representation.
+Transformer architectures use self-attention to learn context-dependent
+representations and have become the foundation of modern language understanding
+systems~\cite{vaswani2017attention}. Encoder models such as BERT can be adapted
+to EQA by producing token representations from the combined question and
+context and then estimating start and end distributions over the context
+tokens~\cite{devlin2019bert}. The architecture is well suited to evidence-based
+fact retrieval because it predicts positions in the original document rather
+than freely generating an answer.
 
 \begin{definition}[Generative artificial intelligence]
 Generative artificial intelligence (GAI) aims to learn a model distribution
@@ -165,115 +158,140 @@ the tokenized text:
 \end{equation}
 \end{definition}
 
-The scientific basis for structured QA generation predates contemporary instruction-tuned LLMs. Answer-aware neural question generation conditions a question on a designated answer within a context, thereby strengthening question--answer alignment \cite{zhou2017neuralqg}. Position-aware generation further incorporates the answer's location in the source text \cite{sun2018answerfocused}. These contributions establish an important principle for synthetic EQA construction: a valid instance is not merely a plausible question and a plausible phrase. It is a verifiable relation among a context, a question, an answer span, and an exact answer position.
+\subsubsection{Extractive Question Answering and the SQuAD v2 Task}
 
-LLMs can facilitate the creation of this relation, but fluency must not be mistaken for correctness. Hallucination and unfaithfulness refer to generated content that is unsupported by or inconsistent with the available evidence \cite{ji2023hallucination,zhang2023siren}. In synthetic EQA, a closely related failure can occur even if the answer string appears in the report: the selected span can be semantically unrelated to the requested information. A phrase such as ``a few meters away'' may be literal but not a location; a time may refer to the discovery of theft rather than to the robbery; and an isolated noun may omit other explicitly stolen items.
+Question answering comprises tasks that differ in the evidence available to the
+system and in the expected answer form. In open-domain QA, a system must
+retrieve evidence from a large corpus. In reading-comprehension QA, the context
+is provided alongside the question. EQA is a reading-comprehension formulation
+in which the answer must be a contiguous span in the supplied context. Given a
+tokenized context $C=(c_1,\ldots,c_n)$ and a question $Q$, an extractive reader
+estimates a start and end position:
+\begin{equation}
+(s^*,e^*) = \arg\max_{1 \leq s \leq e \leq n} P(s,e\mid C,Q),
+\label{eq:eqa}
+\end{equation}
+where the final answer is $c_{s^*:e^*}$. This formulation provides a direct
+provenance relation: the answer is traceable to a particular segment of the
+document.
 
-Evidence-based QA research emphasizes faithfulness, traceability, and robustness as essential requirements for dependable LLM systems \cite{schimanski2024faithful}. EQA provides a useful first constraint because the answer must be copied from a source context. Nevertheless, extractiveness is not complete semantic validation. Both an LLM producing candidate annotations and an EQA model making predictions can select a literal but wrong span. Therefore, an appropriate legal-EQA pipeline requires multiple safeguards: deterministic span verification, explicit support for unanswerable questions, category-aware risk detection, and an artificial audit (LLM-as-judge) to estimate residual semantic error.
+The Stanford Question Answering Dataset (SQuAD) established a widely adopted
+benchmark for extractive machine comprehension by pairing natural-language
+questions with answer spans in Wikipedia passages~\cite{rajpurkar2016squad}.
+SQuAD v2 expanded the task by adding adversarially written unanswerable
+questions~\cite{rajpurkar2018know}. Thus, a model must decide not only which
+span is relevant, but also whether the provided context contains evidence for
+any answer. This selective-prediction property is particularly important in
+robbery reports: a narrative may mention several times without stating the
+robbery time, describe a location only vaguely, or omit a monetary value
+altogether. Multilingual QA research confirms that extractive methods can be
+evaluated beyond English; MLQA includes Spanish among its languages and
+provides a benchmark for cross-lingual extractive QA~\cite{lewis2020mlqa}.
+However, multilingual resources do not remove the need for domain-specific
+data. Spanish robbery reports often contain informal grammar, regional
+expressions, abbreviations, typographical errors, multiple events, and
+ambiguous references, which motivates a domain-sensitive construction and
+validation protocol.
 
-The study by Borroto et al. on question answering with LLMs and learning from answer sets offers a related reliability perspective \cite{borroto2025llm2las}. Its aim is story-based commonsense reasoning, and it is not a direct baseline for extractive QA over criminal reports. Its relevance to the present study is conceptual: it illustrates the value of supplementing LLM processing with explicit and externally checkable constraints. Here, that principle is implemented through answer-span checks, answerability controls, provenance fields, and audit labels rather than answer-set learning.
+\subsubsection{Zero-Shot and Transfer Learning}
 
-Recent legal QA research has also investigated the use of LLM-generated supervision and distillation to produce legal QA resources \cite{italiani2025aceattorney}. Such work supports the practical value of LLM-assisted data creation but increases the importance of transparent validation. When generated labels are used for training, model performance should be evaluated on examples that are independent of the generation decisions used to create the training corpus. An LLM-audited, context-disjoint gold subset provides a more credible estimate of whether a downstream EQA model retrieves the intended evidence from new reports.
+Pretrained encoders can be evaluated zero-shot, i.e., without any additional
+training on the target dataset, and then fine-tuned on domain supervision.
+Zero-shot evaluation exposes the knowledge already present in the pretrained
+checkpoint, whereas fine-tuning adapts the model to the target schema and
+register at the risk of overfitting or catastrophic forgetting when the
+training signal is noisy. Comparing both settings, as done in this study, makes
+it possible to attribute performance gains to the dataset rather than to the
+base model.
 
-\subsection{Models Used in This Research}
-\label{sec:models}
+\subsubsection{LLMs as Synthetic Data Generators and Reviewers}
 
-This research relies on two groups of models: the LLMs used to generate and
-audit the SQuAD v2 dataset, and the extractive QA encoders evaluated in the
-Option B ablation. To keep the text readable, each model is referred to by a
-short name defined in Table~\ref{tab:model-reference}; the table also provides
-the exact Hugging Face identifier and URL. Table~\ref{tab:model-summary}
-summarises the main characteristics of these models.
+Two established uses of LLMs anchor this study. First, LLMs can act as
+\textit{synthetic annotators} or generators of supervision. Answer-aware neural
+question generation conditions a question on a designated answer within a
+context, thereby strengthening question--answer alignment~\cite{zhou2017neuralqg};
+position-aware generation further incorporates the answer's location in the
+source text~\cite{sun2018answerfocused}. Second, LLMs can act as
+\textit{automated judges or reviewers} that evaluate other models' outputs;
+this LLM-as-judge paradigm has been formalized and benchmarked in the
+literature~\cite{zheng2023judge}. The present study uses both roles: two LLMs
+generate candidate SQuAD v2-style instances, and a third, independent LLM
+reviews a stratified sample of those instances as a simulated annotator.
 
-\subsubsection{Models for SQuAD v2 Dataset Generation and Audit}
-\label{sec:models-generation}
+\subsection{Related Work}
 
-The candidate QA pairs are generated with two open instruction-tuned LLMs:
-Gemma-3-1B-IT~\cite{gemma3_1b_hf,gemma3_techreport} and
-Qwen-2.5-3B-Instruct~\cite{qwen2_5_3b_hf,qwen2_5_techreport}
-(Table~\ref{tab:model-reference}). Gemma-3-1B-IT is a compact multimodal model
-from the Gemma 3 family; its 1B variant supports a context window of 32K
-tokens and understands more than 140 languages, including Spanish.
-Qwen-2.5-3B-Instruct is a dense decoder-only model from the Qwen2.5 family
-with a 32K context window, multilingual support for over 29 languages, and a
-training recipe optimised for instruction following. Both models are
-open-weight, can run on the available GPU infrastructure, and are
-representative of two different model families and sizes, which allows the
-study to compare generator behaviour rather than relying on a single
-annotation source.
+\subsubsection{Transformers in Legal and Evidence-Based NLP}
 
-The stratified semantic audit is performed by GLM-5.3, an LLM acting as an
-artificial reviewer (reviewer id \texttt{computer-v1})~\cite{glm_reviewer_hf,zeng2024chatglm}.
-The GLM family is a series of bilingual Chinese--English large language models
-developed by Zhipu AI; the specific checkpoint used as reviewer must be
-confirmed, but the family report describes models with long-context support
-and tool-use capabilities that make them suitable for structured annotation
-review.
+The legal domain presents specific challenges for NLP, including specialized
+language, jurisdictional variation, long documents, incomplete standardization,
+sensitive data, and limited expert annotations. Recent work surveying
+transformer-based legal text processing documents the growing use of these
+models for classification, retrieval, prediction, and question answering,
+while stressing the importance of reliable task definitions and
+evaluation~\cite{greco2024transformerlegal}. Legal NLP surveys likewise identify
+data availability, interpretability, and transfer across legal systems as
+central methodological concerns~\cite{niklaus2021legalnlp}.
 
-\subsubsection{Models for the Extractive QA Ablation}
-\label{sec:models-ablation}
+Legal benchmarks have increased multilingual coverage, but coverage remains
+uneven across jurisdictions and tasks. LEXTREME provides a multilingual and
+multi-task legal benchmark, illustrating both the progress and the
+fragmentation of legal NLP evaluation resources~\cite{niklaus2023lextreme}.
+For Spanish, Legal-ES provides large-scale data for legal text processing from
+legislative, administrative, and jurisprudential sources~\cite{gonzalez2020legales}.
+Related work on legal information retrieval and entailment further motivates
+traceable methods: Kim et al.\ apply transformer-based approaches to case-law
+retrieval and legal entailment in the COLIEE setting~\cite{kim2024legalir}.
+Although those tasks differ from short-span extraction, they share the
+requirement that a system grounds its output in legal textual evidence, which
+EQA provides through the predicted span.
 
-The Option B ablation evaluates four pre-trained extractive QA encoders in
-zero-shot and fine-tuned settings (Table~\ref{tab:model-reference}). The two
-Spanish-only encoders are based on BETO~\cite{CaneteCFP2020}, a BERT model
-pre-trained exclusively on Spanish data: mrm8488-BETO and
-MMG-BETO~\cite{mrm8488_beto_squad2_hf,mmg_beto_squad2_hf}. Both follow the
-BERT-base configuration (12 layers, 768 hidden units, 12 attention heads) and
-were further fine-tuned on Spanish SQuAD-style data, giving them a maximum
-sequence length of 512 tokens. The multilingual encoder is
-XLM-Roberta~\cite{xlmr_squad2_hf,conneau2020xlmr}, based on XLM-Roberta, which
-was pre-trained on 100 languages and fine-tuned on SQuAD 2.0. Finally, the
-distilled encoder is Distilled-BETO~\cite{distill_beto_squad2_hf,sanh2019distilbert},
-a Spanish BERT distilled with the DistilBERT approach, which retains a
-512-token context but with a reduced number of layers and parameters.
+\subsubsection{LLM-Based Synthetic Data Generation for QA}
 
-% Source: Hugging Face model cards (URLs below); short names defined in this chapter.
-\begin{table}[!t]
-\caption{Short names, exact Hugging Face identifiers, and URLs of the models used in this research.}
-\label{tab:model-reference}
-\centering
-\small
-\begin{tabular}{p{3.0cm}p{4.4cm}p{3.2cm}}
-\toprule
-Short name & Hugging Face identifier & URL \\
-\midrule
-Gemma-3-1B-IT & \texttt{google/gemma-3-1b-it} & \seqsplit{https://huggingface.co/google/gemma-3-1b-it} \\
-Qwen-2.5-3B-Instruct & \texttt{Qwen/Qwen2.5-3B-Instruct} & \seqsplit{https://huggingface.co/Qwen/Qwen2.5-3B-Instruct} \\
-GLM-5.3 & \texttt{(to be confirmed)} & \seqsplit{https://huggingface.co/zai-org} \\
-mrm8488-BETO & \seqsplit{\texttt{mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es}} & \seqsplit{https://huggingface.co/mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es} \\
-MMG-BETO & \seqsplit{\texttt{MMG/bert-base-spanish-wwm-cased-finetuned-squad2-es}} & \seqsplit{https://huggingface.co/MMG/bert-base-spanish-wwm-cased-finetuned-squad2-es} \\
-XLM-Roberta & \seqsplit{\texttt{deepset/xlm-roberta-base-squad2}} & \seqsplit{https://huggingface.co/deepset/xlm-roberta-base-squad2} \\
-Distilled-BETO & \seqsplit{\texttt{mrm8488/distill-bert-base-spanish-wwm-cased-finetuned-spa-squad2-es}} & \seqsplit{https://huggingface.co/mrm8488/distill-bert-base-spanish-wwm-cased-finetuned-spa-squad2-es} \\
-\bottomrule
-\end{tabular}
-\end{table}
+Large language models can produce candidate labels, instructions, summaries,
+and QA pairs at a scale that is difficult to achieve through exclusive manual
+annotation~\cite{zhou2017neuralqg,sun2018answerfocused}. This capability is
+particularly valuable for low-resource domains such as Spanish criminal
+narratives, where specialized annotation requires time and may be restricted by
+data sensitivity. Recent legal QA research has also investigated the use of
+LLM-generated supervision and distillation to produce legal QA
+resources~\cite{italiani2025aceattorney}, which supports the practical value of
+LLM-assisted data creation but increases the importance of transparent
+validation. The study by Borroto et al.\ on question answering with LLMs and
+learning from answer sets offers a related reliability perspective: it
+illustrates the value of supplementing LLM processing with explicit and
+externally checkable constraints~\cite{borroto2025llm2las}.
 
-\begin{table}[!t]
-\caption{Summary of the main characteristics of the models used in this research.}
-\label{tab:model-summary}
-\centering
-\small
-\begin{tabular}{p{2.8cm}p{1.5cm}p{1.4cm}p{1.2cm}p{1.5cm}p{3.0cm}}
-\toprule
-Model & Context (tokens) & Multilingual & Spanish & EQA fine-tuned & Reported performance \\
-\midrule
-Gemma-3-1B-IT & 32K & Yes (140+) & Yes & No & Competitive small-model performance in the Gemma 3 report \\
-Qwen-2.5-3B-Instruct & 32K (128K ext.) & Yes (29+) & Yes & No & Cost-effective 3B model competitive within its size \\
-GLM-5.3 & up to 128K & Yes (bilingual focus) & Limited & No & Rivals GPT-4 on general benchmarks (family report) \\
-BETO (base) & 512 & No & Yes & -- & Outperforms mBERT on most GLUES tasks \\
-mrm8488-BETO & 512 & No & Yes & Yes & Fine-tuned Spanish SQuAD checkpoint \\
-MMG-BETO & 512 & No & Yes & Yes & Fine-tuned Spanish SQuAD checkpoint \\
-XLM-Roberta & 512 & Yes (100) & Yes & Yes & +14.6 XNLI, +13 MLQA F1 vs mBERT \\
-Distilled-BETO & 512 & No & Yes & Yes & Retains 97\% of BERT GLUE (DistilBERT) \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsubsection{Quality Control and Reliability of LLM-Generated Data}
+
+Hallucination and unfaithfulness refer to generated content that is unsupported
+by or inconsistent with the available evidence~\cite{ji2023hallucination,zhang2023siren}.
+In synthetic EQA, a closely related failure can occur even if the answer string
+appears in the report: the selected span can be semantically unrelated to the
+requested information. A phrase such as ``a few meters away'' may be literal
+but not a location; a time may refer to the discovery of theft rather than to
+the robbery; and an isolated noun may omit other explicitly stolen items.
+Evidence-based QA research emphasizes faithfulness, traceability, and
+robustness as essential requirements for dependable LLM
+systems~\cite{schimanski2024faithful}. These results motivate the two safeguards
+central to this study: a deterministic quality-control pipeline for structural
+and extractive validity, and an independent LLM-based semantic review for
+residual semantic errors that string matching cannot detect.
 
 \subsection{Research Gap and Paper Positioning}
 
-The reviewed literature establishes that EQA provides an evidence-constrained prediction framework, that legal NLP requires domain-aware and multilingual evaluation, and that LLMs can scale synthetic data generation while creating faithfulness risks. The gap addressed in this research lies at their intersection. Existing work has not sufficiently characterized the semantic quality of LLM-generated SQuAD v2-style data for Spanish criminal-report EQA, particularly for wrong semantic types, wrong event references, incomplete answers, and erroneous answers to unanswerable questions.
-
-Accordingly, this research does not only ask whether a fine-tuned transformer can obtain a high F1 score on generated annotations. It evaluates whether the generated annotations themselves are reliable enough for training and whether a filtered, quality-controlled dataset produces more trustworthy results on an LLM-audited test set. This transforms the extension into a reproducible investigation of synthetic-data reliability for Legal NLP.
+The reviewed literature establishes that EQA provides an evidence-constrained
+prediction framework, that legal NLP requires domain-aware and multilingual
+evaluation, and that LLMs can scale synthetic data generation while creating
+faithfulness risks. The gap addressed in this research lies at their
+intersection. Existing work has not sufficiently characterized the semantic
+quality of LLM-generated SQuAD v2-style data for Spanish criminal-report EQA,
+and has not demonstrated whether such data, when quality-controlled and
+reviewed, supports trustworthy fine-tuning under a leakage-free protocol. This
+study therefore answers RQ1--RQ4 rather than only reporting a fine-tuned F1
+score: it evaluates whether the generated annotations themselves are reliable
+enough for training, whether a filtered and reviewed dataset produces more
+defensible results, and whether the original proof-of-concept result survives a
+corrected evaluation protocol.
 
 \section{Materials and Methods}
 \label{sec:methods}
@@ -282,8 +300,8 @@ This section describes the methodology followed for the extended
 study. The pipeline comprises four stages: (i) construction of a SQuAD
 v2-style dataset from Spanish robbery reports using open LLMs as
 candidate generators; (ii) a deterministic automatic quality-control
-(QC) stage; (iii) a stratified semantic audit performed by an LLM
-acting as an artificial reviewer; and (iv) a leakage-free,
+(QC) stage; (iii) a stratified LLM-based semantic review performed by an LLM
+acting as an automated reviewer; and (iv) a leakage-free,
 context-level evaluation protocol with zero-shot and fine-tuned
 extractive QA models. Different to the previous approach
 in~\cite{falconi2026robberyqa}, where only
@@ -325,14 +343,14 @@ Candidate QA pairs are generated from the robbery reports with two
 open instruction-tuned LLMs:
 \textsc{Gemma}-3-1B-IT~\cite{gemma3_1b_hf} and
 \textsc{Qwen}-2.5-3B-Instruct~\cite{qwen2_5_3b_hf}. These two models
-were selected because they are open-weight, can run on a single Nvidia
-A16 GPU, and are representative of two different families and model
-sizes, which allows the study to compare generator behaviour rather
-than relying on a single annotation source. Despite our effort to
-process the 174594 reports in the dataset, given time and resource
-limits. each model processed the
-same 20{,}000-context samples and, for every context, received the five
-target information questions shown in the original study (date, time,
+were selected because they are open-weight, are representative of two
+different families and model sizes, and fit the available compute budget:
+smaller models were deliberately preferred so that generation could run in
+parallel across up to eight NVIDIA A16 GPUs with the required throughput,
+rather than relying on a single larger model. Despite an effort to process the
+174{,}594 reports in the corpus, given time and resource limits each model
+processed the same 20{,}000-context sample and, for every context, received
+the five target information questions shown in the original study (date, time,
 place/address, stolen objects, and monetary value), producing up to
 100{,}000 raw QA rows per generator.
 
@@ -376,13 +394,35 @@ If the context does not mention that information, do not invent or infer:\\
 
 \subsection{Automatic Quality Control}
 
-The automatic QC procedure is deterministic and precedes the semantic audit.
-It verifies that required fields are present, that every answerable
-\texttt{answer\_text} occurs literally in its \texttt{context}, and that a
-recomputed \texttt{answer\_start} points to the same substring. It also
-identifies duplicate or ambiguous occurrences and records a transparent
-\texttt{qc\_status} (literal, normalized, no-answer, or hallucinated) together
-with a reason code.
+The automatic QC procedure is deterministic and precedes the semantic review.
+It is organised in five phases that mirror the QC notebook
+(\texttt{qc\_squadv2\_datasets.ipynb}):
+
+\begin{enumerate}
+\item \textit{Structural integrity.} Each row must parse as JSON, contain the
+  required fields, use valid labels, and be unique with respect to
+  \texttt{(context\_id, question)}.
+\item \textit{Extractive validity.} Generated offsets are never trusted: the
+  \texttt{answer\_start}/\texttt{answer\_end} positions are recomputed against
+  the context, and every answerable row must contain its
+  \texttt{answer\_text} as a literal span of the context. Rows receive a
+  transparent \texttt{qc\_status} label: \texttt{clean\_no\_answer},
+  \texttt{empty\_no\_answer}, \texttt{free\_text\_no\_answer},
+  \texttt{impossible\_but\_span\_present}, or
+  \texttt{non\_extractive\_or\_hallucinated}. A row that fails literal-span
+  verification is \emph{not} silently converted to ``impossible'': it is
+  flagged as uncertain so that the distinction between a genuine abstention
+  and a hallucinated answer is preserved.
+\item \textit{Abstention consistency.} The sentinel and the
+  \texttt{is\_impossible} label must be coherent, and answer versus abstention
+  rates are measured globally and by question type.
+\item \textit{Span distribution and usefulness.} Answer lengths, duplicate
+  answers, and excessively long answers are analyzed; over-long answers are
+  detected with a combined percentile and fixed-length rule.
+\item \textit{Inter-generator agreement.} Because both generators processed the
+  same \texttt{(context\_id, question)} pairs, their answerability and
+  exact-answer agreement are compared directly.
+\end{enumerate}
 
 In addition to these structural checks, a context-aware semantic heuristic
 flags candidates that may satisfy literal matching while posing semantic risk.
@@ -393,7 +433,7 @@ discovery of the incident, or a period unrelated to the robbery. For object
 questions, the pipeline flags obvious non-object answers and possibly
 incomplete enumerations. For monetary values, it preserves currency
 expressions where possible and flags contexts containing multiple
-amounts. 
+amounts.
 
 The QC stage produces per-model strict and expanded SQuAD v2 variants, and a
 merged dataset. The final merged corpus contains 80{,}726 rows (59{,}497
@@ -470,14 +510,14 @@ Disagreement rate (\%) & 40.04 \\
 \label{fig:span-qwen}
 \end{figure}
 %% LLM-SOLVED
-\subsection{Stratified Semantic Audit}
+\subsection{LLM-Based Semantic Review}
 
-A stratified audit sample of 200 rows (100 per generator) is drawn across
+A stratified review sample of 200 rows (100 per generator) is drawn across
 generating models, question categories, answerability labels, and QC statuses.
 Each record is reviewed for semantic correctness, completeness, event
 alignment, and correctness of the no-answer decision. The review is performed
-by an LLM acting as an artificial reviewer (GLM-5.3, reviewer
-id \texttt{computer-v1})~\cite{glm_reviewer_hf}; no human intervention has
+by an LLM acting as an automated reviewer (Reviewer-LLM (R1), reviewer
+id \texttt{R1})~\cite{glm45_techreport,glm_reviewer_hf}; no human intervention has
 been carried out at this stage. The proposed error taxonomy is defined by the
 following programming labels, each associated with a semantic concept:
 \begin{enumerate}
@@ -502,13 +542,16 @@ following programming labels, each associated with a semantic concept:
 \end{enumerate}
 %% LLM-SOLVED
 
-The audit is a statistically designed estimate of semantic label reliability
+The review is a statistically designed estimate of semantic label reliability
 and a mechanism for improving automatic filters; it is not intended to
-exhaustively label the entire corpus. Because the current audit uses a single
-artificial reviewer, inter-annotator agreement metrics are not yet applicable;
-confidence intervals for the observed correctness rates are reported instead.
-The 200 labeled rows constitute the gold evaluation subset, which is held out
-and never used for training, prompt revision, or hyperparameter selection.
+exhaustively label the entire corpus. The sample size of 200 rows was chosen so
+that the observed correctness rates carry approximately $\pm 5$--7 percentage
+point margins at 95\% confidence, balancing review cost against estimation
+precision; Wilson score intervals are reported for the observed proportions.
+Because the current review uses a single automated reviewer, inter-annotator
+agreement metrics are not yet applicable. The 200 labeled rows constitute the
+LLM-reviewed evaluation subset, which is held out and never used for training,
+prompt revision, or hyperparameter selection.
 
 \subsection{Dataset Versions and Splits}
 
@@ -558,10 +601,113 @@ expanded\_qwen & 100{,}000 & 61{,}340 & 38{,}660 & 38.66 & 0 & 0 \\
 
 The final training partitions are obtained with a deterministic context-level
 80/10/10 split (seed 42), so all experiment variants share the same partition.
+The split is context-level rather than row-level because several questions
+share the same source report: a row-level split would place sibling questions
+from the same report in different partitions, leaking report-specific
+information across train, validation, and test. The LLM-reviewed rows are
+excluded from the partitions by \texttt{(context, question)} pair so that the
+reviewed subset is never used as a design input and remains a held-out
+evaluation set.
 The resulting Hugging Face dataset
 (\texttt{LeninGF/question-answering-robbery-m2}) contains 64{,}439 training
-rows, 8{,}012 validation rows, 8{,}109 test rows, and 200 gold-test rows, all
+rows, 8{,}012 validation rows, 8{,}109 test rows, and 200 reviewer-labeled rows, all
 in SQuAD v2 schema with \texttt{context\_id}.
+
+\subsection{Models Used in This Research}
+\label{sec:models}
+
+This research relies on two groups of models: the LLMs used to generate and
+review the SQuAD v2 dataset, and the extractive QA encoders evaluated in the
+Option B ablation. To keep the text readable, each model is referred to by a
+short name defined in Table~\ref{tab:model-reference}; the table also provides
+the exact Hugging Face identifier and URL. Table~\ref{tab:model-summary}
+summarises the main characteristics of these models.
+
+\subsubsection{Models for SQuAD v2 Dataset Generation and Review}
+\label{sec:models-generation}
+
+The candidate QA pairs are generated with two open instruction-tuned LLMs:
+Gemma-3-1B-IT~\cite{gemma3_1b_hf,gemma3_techreport} and
+Qwen-2.5-3B-Instruct~\cite{qwen2_5_3b_hf,qwen2_5_techreport}
+(Table~\ref{tab:model-reference}). Gemma-3-1B-IT is a compact multimodal model
+from the Gemma 3 family; its 1B variant supports a context window of 32K
+tokens and understands more than 140 languages, including Spanish.
+Qwen-2.5-3B-Instruct is a dense decoder-only model from the Qwen2.5 family
+with a 32K context window, multilingual support for over 29 languages, and a
+training recipe optimised for instruction following. Both models are
+open-weight, can run on the available GPU infrastructure, and are
+representative of two different model families and sizes, which allows the
+study to compare generator behaviour rather than relying on a single
+annotation source.
+
+The stratified LLM-based semantic review is performed by Reviewer-LLM (R1), an
+LLM acting as an automated reviewer (reviewer id \texttt{R1})~\cite{glm45_techreport,glm_reviewer_hf,zeng2024chatglm}.
+Reviewer-LLM is based on the GLM family of bilingual Chinese--English large
+language models developed by Zhipu AI/Z.ai; the checkpoint used is
+\texttt{zai-org/GLM-4.6}, whose model card points to the GLM-4.5 technical
+report~\cite{glm45_techreport}. The family report describes models with
+long-context support and tool-use capabilities that make them suitable for
+structured annotation review.
+
+\subsubsection{Models for the Extractive QA Ablation}
+\label{sec:models-ablation}
+
+The Option B ablation evaluates four pre-trained extractive QA encoders in
+zero-shot and fine-tuned settings (Table~\ref{tab:model-reference}). The two
+Spanish-only encoders are based on BETO~\cite{CaneteCFP2020}, a BERT model
+pre-trained exclusively on Spanish data: mrm8488-BETO and
+MMG-BETO~\cite{mrm8488_beto_squad2_hf,mmg_beto_squad2_hf}. Both follow the
+BERT-base configuration (12 layers, 768 hidden units, 12 attention heads) and
+were further fine-tuned on Spanish SQuAD-style data, giving them a maximum
+sequence length of 512 tokens. The multilingual encoder is
+XLM-Roberta~\cite{xlmr_squad2_hf,conneau2020xlmr}, based on XLM-Roberta, which
+was pre-trained on 100 languages and fine-tuned on SQuAD 2.0. Finally, the
+distilled encoder is Distilled-BETO~\cite{distill_beto_squad2_hf,sanh2019distilbert},
+a Spanish BERT distilled with the DistilBERT approach, which retains a
+512-token context but with a reduced number of layers and parameters.
+
+% Source: Hugging Face model cards (URLs below); short names defined in this paper.
+\begin{table}[!t]
+\caption{Short names, exact Hugging Face identifiers, and URLs of the models used in this research.}
+\label{tab:model-reference}
+\centering
+\small
+\begin{tabular}{p{3.0cm}p{4.4cm}p{3.2cm}}
+\toprule
+Short name & Hugging Face identifier & URL \\
+\midrule
+Gemma-3-1B-IT & \texttt{google/gemma-3-1b-it} & \seqsplit{https://huggingface.co/google/gemma-3-1b-it} \\
+Qwen-2.5-3B-Instruct & \texttt{Qwen/Qwen2.5-3B-Instruct} & \seqsplit{https://huggingface.co/Qwen/Qwen2.5-3B-Instruct} \\
+Reviewer-LLM (R1) & \texttt{zai-org/GLM-4.6} & \seqsplit{https://huggingface.co/zai-org/GLM-4.6} \\
+mrm8488-BETO & \seqsplit{\texttt{mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es}} & \seqsplit{https://huggingface.co/mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es} \\
+MMG-BETO & \seqsplit{\texttt{MMG/bert-base-spanish-wwm-cased-finetuned-squad2-es}} & \seqsplit{https://huggingface.co/MMG/bert-base-spanish-wwm-cased-finetuned-squad2-es} \\
+XLM-Roberta & \seqsplit{\texttt{deepset/xlm-roberta-base-squad2}} & \seqsplit{https://huggingface.co/deepset/xlm-roberta-base-squad2} \\
+Distilled-BETO & \seqsplit{\texttt{mrm8488/distill-bert-base-spanish-wwm-cased-finetuned-spa-squad2-es}} & \seqsplit{https://huggingface.co/mrm8488/distill-bert-base-spanish-wwm-cased-finetuned-spa-squad2-es} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\caption{Summary of the main characteristics of the models used in this research.}
+\label{tab:model-summary}
+\centering
+\small
+\begin{tabular}{p{2.8cm}p{1.5cm}p{1.4cm}p{1.2cm}p{1.5cm}p{3.0cm}}
+\toprule
+Model & Context (tokens) & Multilingual & Spanish & EQA fine-tuned & Reported performance \\
+\midrule
+Gemma-3-1B-IT & 32K & Yes (140+) & Yes & No & Competitive small-model performance in the Gemma 3 report \\
+Qwen-2.5-3B-Instruct & 32K (128K ext.) & Yes (29+) & Yes & No & Cost-effective 3B model competitive within its size \\
+Reviewer-LLM (R1) & up to 128K & Yes (bilingual focus) & Limited & No & Rivals GPT-4 on general benchmarks (family report) \\
+BETO (base) & 512 & No & Yes & -- & Outperforms mBERT on most GLUES tasks \\
+mrm8488-BETO & 512 & No & Yes & Yes & Fine-tuned Spanish SQuAD checkpoint \\
+MMG-BETO & 512 & No & Yes & Yes & Fine-tuned Spanish SQuAD checkpoint \\
+XLM-Roberta & 512 & Yes (100) & Yes & Yes & +14.6 XNLI, +13 MLQA F1 vs mBERT \\
+Distilled-BETO & 512 & No & Yes & Yes & Retains 97\% of BERT GLUE (DistilBERT) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 
 \subsection{Extractive QA Models and Fine-Tuning}
 
@@ -571,16 +717,21 @@ es~\cite{mrm8488_beto_squad2_hf}, a second Spanish BERT SQuAD-es
 checkpoint~\cite{mmg_beto_squad2_hf}, a multilingual XLM-Roberta SQuAD2
 checkpoint~\cite{xlmr_squad2_hf}, and a distilled Spanish BERT SQuAD-es
 checkpoint~\cite{distill_beto_squad2_hf}. All four models are evaluated on the
-same test and gold splits, and none is treated as a privileged headline model.
+same test and reviewer-labeled splits, and none is treated as a privileged headline model.
 
 Zero-shot evaluation applies the pre-trained checkpoint directly to the test
-and gold sets. Fine-tuning adapts each checkpoint to the merged M2 training
+and reviewer-labeled sets. Fine-tuning adapts each checkpoint to the merged M2 training
 corpus with a learning rate of \(2 \times 10^{-5}\), weight decay of 0.01,
 maximum sequence length of 384 tokens with a stride of 128, an effective batch
 size of 64 (32 per device with gradient accumulation 2), and FP16
-training. Models are trained for up to 15 epochs with early stopping on
-validation F1 (patience 2--3), and the best checkpoint is selected on the
-held-out validation split, never on the test set.
+training. A preliminary plateau experiment (documented in the research
+journal) showed a textbook overfitting signature: train loss decreased
+monotonically while evaluation loss increased almost monotonically over 50
+epochs, and validation F1 peaked mid-training and then declined. The final
+ablation therefore uses early stopping on validation F1 (patience 2--3), with
+a useful epoch range of roughly 10--15 rather than a large fixed epoch count,
+and the best checkpoint is selected on the held-out validation split, never on
+the test set.
 
 For SQuAD v2, each model must also decide whether a question is answerable. A
 no-answer threshold is tuned on the validation split and then frozen and
@@ -594,34 +745,9 @@ The evaluation follows SQuAD v2 conventions. Exact match (EM) and token-level
 F1 are computed with the standard normalization (lowercasing, punctuation
 removal, and whitespace collapsing). Metrics are disaggregated by
 answerability (HasAns and NoAns) and by question type (date, time, place,
-objects, value). The main definitions are given below.
-
-\begin{definition}[Exact Match]
-For a prediction $p$ and a gold answer $g$, EM is 1 if the normalized
-prediction equals the normalized gold answer and 0 otherwise.
-\end{definition}
-
-\begin{definition}[Token-level F1]
-For a prediction $p$ and a gold answer $g$, token-level F1 is
-$2 \cdot \frac{P \cdot R}{P + R}$, where $P$ is the fraction of predicted
-tokens that appear in the gold answer and $R$ is the fraction of gold tokens
-that appear in the prediction. For multiple gold answers, the maximum F1 is
-used.
-\end{definition}
-
-\begin{definition}[HasAns and NoAns metrics]
-HasAns metrics are computed only over answerable questions; NoAns metrics are
-computed only over unanswerable questions. A correct NoAns prediction is one
-where the model abstains (empty prediction), and a correct HasAns prediction
-is one where the predicted span matches the gold span.
-\end{definition}
-
-\begin{definition}[Wilson score interval]
-The Wilson score interval is a confidence interval for a binomial proportion
-$p$: \(\frac{1}{1+\frac{z^2}{n}}\left(p + \frac{z^2}{2n} \pm z
-\sqrt{\frac{p(1-p)}{n} + \frac{z^2}{4n^2}}\right)\), where $n$ is the sample
-size and $z$ is the standard normal quantile (1.96 for 95\% confidence).
-\end{definition}
+objects, value). The formal definitions of EM, token-level F1, HasAns/NoAns
+metrics, and the Wilson score interval are given in Section~4.3, together with
+the no-answer threshold protocol.
 
 \subsection{Paper Replication}
 \label{sec:paper-replication}
@@ -732,27 +858,27 @@ risk of incomplete or over-specific answers.
 \label{fig:answer-words-kind}
 \end{figure}
 
-\subsection{Semantic Audit Results}
+\subsection{Semantic Review Results}
 
-The GLM-5.3 artificial reviewer audited 200 stratified rows (100 per
-generator). Table~\ref{tab:audit-summary} reports the per-generator results:
+Reviewer-LLM (R1) reviewed 200 stratified rows (100 per
+generator). Table~\ref{tab:review-summary} reports the per-generator results:
 Qwen obtained 73 correct rows (73.0\%, 95\% Wilson CI 0.636--0.807), while
 Gemma obtained 57 correct rows (57.0\%, 95\% Wilson CI 0.472--0.663).
-Figure~\ref{fig:audit-accuracy-model} shows the same comparison graphically.
-The audit accuracy varies strongly by question type
-(Table~\ref{tab:audit-kinds}): Qwen is markedly more accurate on date
+Figure~\ref{fig:review-accuracy-model} shows the same comparison graphically.
+The review accuracy varies strongly by question type
+(Table~\ref{tab:review-kinds}): Qwen is markedly more accurate on date
 questions (95.8\%) but both models are weakest on place questions (Gemma
 48.0\%, Qwen 47.1\%).
 
 % Source: Reports/audit_glm_v1/outputs/table_audit_summary.tex
 \begin{table}[!t]
-\caption{Semantic audit summary by generator model.}
-\label{tab:audit-summary}
+\caption{Semantic review summary by generator model.}
+\label{tab:review-summary}
 \centering
 \small
 \begin{tabular}{lrrrr}
 \toprule
-Model & Audited $n$ & Correct & Incorrect & Accuracy \\
+Model & Reviewed $n$ & Correct & Incorrect & Accuracy \\
 \midrule
 Gemma & 100 & 57 & 43 & 0.570 \\
 Qwen & 100 & 73 & 27 & 0.730 \\
@@ -764,19 +890,19 @@ Qwen & 100 & 73 & 27 & 0.730 \\
 \begin{figure}[!t]
 \centering
 \includegraphics[width=0.85\textwidth]{figures/audit_accuracy_by_model.pdf}
-\caption{GLM audit accuracy by generator model (error bars show 95\% Wilson confidence intervals).}
-\label{fig:audit-accuracy-model}
+\caption{GLM review accuracy by generator model (error bars show 95\% Wilson confidence intervals).}
+\label{fig:review-accuracy-model}
 \end{figure}
 
 % Source: Reports/audit_glm_v1/outputs/table_audit_by_question_kind.tex
 \begin{table}[!t]
-\caption{Semantic audit accuracy by question type and generator model.}
-\label{tab:audit-kinds}
+\caption{Semantic review accuracy by question type and generator model.}
+\label{tab:review-kinds}
 \centering
 \small
 \begin{tabular}{llrrr}
 \toprule
-Model & Question type & Audited $n$ & Correct & Accuracy \\
+Model & Question type & Reviewed $n$ & Correct & Accuracy \\
 \midrule
 Gemma & date & 12 & 5 & 0.417 \\
 Gemma & time & 24 & 14 & 0.583 \\
@@ -793,17 +919,17 @@ Qwen & value & 12 & 9 & 0.750 \\
 \end{table}
 
 The most frequent semantic errors are reported in
-Table~\ref{tab:audit-errors} and Figure~\ref{fig:audit-error-types}.
+Table~\ref{tab:review-errors} and Figure~\ref{fig:review-error-types}.
 False abstentions are the dominant failure mode (29 cases, 14.5\% of the
-audited rows), followed by wrong time references (12 cases, 6.0\%) and
+reviewed rows), followed by wrong time references (12 cases, 6.0\%) and
 incomplete object lists (10 cases, 5.0\%). These categories confirm that
 literal matching alone is insufficient: the extracted span may be valid in
 string terms but semantically wrong, incomplete, or temporally misaligned.
 
 % Source: Reports/audit_glm_v1/outputs/error_type_distribution.csv
 \begin{table}[!t]
-\caption{Distribution of semantic error types in the audit sample.}
-\label{tab:audit-errors}
+\caption{Distribution of semantic error types in the review sample.}
+\label{tab:review-errors}
 \centering
 \small
 \begin{tabular}{lrr}
@@ -827,15 +953,53 @@ other & 3 & 1.5 \\
 \begin{figure}[!t]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/audit_error_type_distribution.pdf}
-\caption{Distribution of semantic error types identified by the GLM artificial reviewer.}
-\label{fig:audit-error-types}
+\caption{Distribution of semantic error types identified by the GLM automated reviewer.}
+\label{fig:review-error-types}
 \end{figure}
 
-\subsection{EQA Evaluation on the LLM-Audited Gold Set}
+\subsection{EQA Evaluation on the LLM-Reviewed Subset}
+
+The evaluation uses the following formal metrics.
+
+\begin{definition}[Exact Match]
+For a prediction $p$ and a reference answer $g$, EM is 1 if the normalized
+prediction equals the normalized reference answer and 0 otherwise.
+\end{definition}
+
+\begin{definition}[Token-level F1]
+For a prediction $p$ and a reference answer $g$, token-level F1 is
+$2 \cdot \frac{P \cdot R}{P + R}$, where $P$ is the fraction of predicted
+tokens that appear in the reference answer and $R$ is the fraction of
+reference tokens that appear in the prediction. For multiple reference
+answers, the maximum F1 is used.
+\end{definition}
+
+\begin{definition}[HasAns and NoAns metrics]
+HasAns metrics are computed only over answerable questions; NoAns metrics are
+computed only over unanswerable questions. A correct NoAns prediction is one
+where the model abstains (empty prediction), and a correct HasAns prediction
+is one where the predicted span matches the reference span.
+\end{definition}
+
+\begin{definition}[Wilson score interval]
+The Wilson score interval is a confidence interval for a binomial proportion
+$p$: \(\frac{1}{1+\frac{z^2}{n}}\left(p + \frac{z^2}{2n} \pm z
+\sqrt{\frac{p(1-p)}{n} + \frac{z^2}{4n^2}}\right)\), where $n$ is the sample
+size and $z$ is the standard normal quantile (1.96 for 95\% confidence).
+\end{definition}
+
+The no-answer threshold protocol is as follows. Plain F1 at threshold 0.0 is
+reported as a conservative lower bound. The headline number is the F1 obtained
+with the threshold frozen from the best validation epoch and then applied to
+the test set. The oracle best-F1 threshold computed on the test set
+(\texttt{best\_f1}) is a diagnostic upper bound only and is never reported as a
+primary result. This protocol is deliberately more conservative than the one
+used in the original study, where the test set itself was used to select the
+best checkpoint.
 
 Table~\ref{tab:model-results} reports the zero-shot (ZSL) and fine-tuned (FT)
 performance of the four extractive QA encoders on the held-out test set
-(8{,}109 rows) and on the LLM-audited gold subset (200 rows). Metrics are
+(8{,}109 rows) and on the LLM-reviewed subset (200 rows). Metrics are
 computed with the standard SQuAD v2 normalization and are reported as
 fractions; the no-answer threshold used for the test set is the one tuned on
 the validation split and frozen before evaluation. Figure~\ref{fig:ablation-comparison}
@@ -851,13 +1015,13 @@ performance in both settings, with a test F1 of 0.3844 in zero-shot and 0.3860
 after fine-tuning, indicating that the reduced capacity of the distilled
 encoder is insufficient for the SQuAD v2 task with abstention.
 
-The same ordering is observed on the LLM-audited gold subset. Fine-tuning
-raises the gold F1 of deepset XLM-Roberta from 0.5093 to 0.6800 and that of
+The same ordering is observed on the LLM-reviewed subset. Fine-tuning
+raises the reviewed-subset F1 of deepset XLM-Roberta from 0.5093 to 0.6800 and that of
 MMG-BETO from 0.5818 to 0.6627, whereas the gains for mrm8488-BETO are smaller
 (0.5701 to 0.6074). For the distilled model, fine-tuning does not improve the
-gold F1 (0.3201 to 0.2836), which suggests that the distilled encoder does not
+reviewed-subset F1 (0.3201 to 0.2836), which suggests that the distilled encoder does not
 benefit from the additional training signal when the reference labels are
-semantically audited rather than generated by the same process.
+semantically reviewed rather than generated by the same process.
 
 Table~\ref{tab:qtype-results} disaggregates the fine-tuned F1 by question
 type. Date and monetary-value questions are consistently the easiest for all
@@ -872,16 +1036,16 @@ competitive F1 on the monetary-value category.
 % Results aggregated with scripts/aggregate_results.py from
 % out_experiments/option_b_abblation/ (per-experiment metrics_summary.json,
 % gold_audit_metrics.json, and metrics_by_question_type.csv). All metrics are
-% fractions; the test set has 8,109 rows and the gold subset 200 rows.
+% fractions; the test set has 8,109 rows and the LLM-reviewed subset 200 rows.
 % Source: out_experiments/option_b_abblation/
 \begin{table}[!t]
-\caption{Zero-shot and fine-tuned EQA performance of the four encoders on the test and LLM-audited gold sets.}
+\caption{Zero-shot and fine-tuned EQA performance of the four encoders on the test and LLM-reviewed sets.}
 \label{tab:model-results}
 \centering
 \small
 \begin{tabular}{llrrrrrr}
 \toprule
-Model & Mode & Test EM & Test F1 & Test HasAns F1 & Test NoAns F1 & Gold EM & Gold F1 \\
+Model & Mode & Test EM & Test F1 & Test HasAns F1 & Test NoAns F1 & Reviewed EM & Reviewed F1 \\
 \midrule
 mrm8488-BETO & ZSL & 0.4158 & 0.6216 & 0.6013 & 0.6768 & 0.3450 & 0.5701 \\
 mrm8488-BETO & FT & 0.5581 & 0.7272 & 0.6934 & 0.8195 & 0.3900 & 0.6074 \\
@@ -898,7 +1062,7 @@ Distilled-BETO & FT & 0.3553 & 0.3860 & 0.1670 & 0.9848 & 0.2400 & 0.2836 \\
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\textwidth]{figures/ablation_model_comparison.pdf}
-\caption{Comparison of zero-shot and fine-tuned token-level F1 of the four extractive QA encoders on the held-out test set (left) and on the LLM-audited gold subset (right).}
+\caption{Comparison of zero-shot and fine-tuned token-level F1 of the four extractive QA encoders on the held-out test set (left) and on the LLM-reviewed subset (right).}
 \label{fig:ablation-comparison}
 \end{figure}
 
@@ -932,7 +1096,7 @@ with the same Spanish BETO checkpoint used in the original study.
 
 % Results aggregated with scripts/aggregate_results.py from
 % out_experiments/paper_replication/ (metrics_summary.json and
-% gold_audit_metrics.json). Test set = 457 legacy rows; gold = 200 M2 audit rows.
+% gold_audit_metrics.json). Test set = 457 legacy rows; reviewer-labeled = 200 M2 review rows.
 \begin{table}[!t]
 \caption{Paper replication results of the previous work on the legacy all-answerable dataset.}
 \label{tab:paper-replication}
@@ -944,7 +1108,7 @@ Setting & EM & F1 & $n$ & Notes \\
 \midrule
 Zero-shot (legacy) & 0.1488 & 0.5113 & 457 & All-answerable test rows \\
 Fine-tuned (legacy) & 0.5208 & 0.7999 & 457 & All-answerable test rows \\
-Fine-tuned on gold audit & 0.2100 & 0.5925 & 200 & M2 LLM-audited gold rows \\
+Fine-tuned on reviewer-labeled review & 0.2100 & 0.5925 & 200 & M2 LLM-reviewed rows \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -954,25 +1118,27 @@ test split, closely matching the previously reported F1 of 82.88 and
 confirming that the model and training procedure are correctly reproduced. The
 zero-shot baseline is substantially lower (EM 0.1488, F1 0.5113), as expected
 for a model that was not fine-tuned on the target schema. When the same
-legacy-trained model is evaluated on the M2 LLM-audited gold subset, its F1
+legacy-trained model is evaluated on the M2 LLM-reviewed subset, its F1
 drops to 0.5925, which is below every M2-fine-tuned encoder reported in
 Table~\ref{tab:model-results}. This comparison highlights the additional
 difficulty introduced by the SQuAD v2 abstention protocol and the semantically
-audited gold labels.
+reviewed labels.
 
 \section{Discussion}
 \label{sec:discussion}
 
 This paper addresses a central risk in LLM-assisted dataset construction: treating synthetic annotations as reliable once they satisfy a basic output format. The empirical analysis must distinguish structural validity, semantic validity, and downstream model accuracy. Structural validity means that an answer occurs in the context and that its offset is correct. Semantic validity means that the answer actually addresses the question, identifies the correct event, provides sufficient specificity, and correctly represents missing evidence. Downstream accuracy measures whether an EQA model retrieves correct evidence in previously unseen reports. These properties are related but not interchangeable.
 
-The proposed workflow preserves the benefit of LLMs---the ability to generate large pools of candidate QA pairs from unlabeled documents---while adding controls appropriate for legal NLP. Automatic checks ensure reproducible minimum requirements. The semantic audit quantifies residual error and identifies failure modes that can inform stricter filters and improved prompting. A gold evaluation subset prevents final performance claims from depending entirely on labels generated by the same process used to create training data.
+The proposed workflow preserves the benefit of LLMs---the ability to generate large pools of candidate QA pairs from unlabeled documents---while adding controls appropriate for legal NLP. Automatic checks ensure reproducible minimum requirements. The semantic review quantifies residual error and identifies failure modes that can inform stricter filters and improved prompting. An LLM-reviewed evaluation subset prevents final performance claims from depending entirely on labels generated by the same process used to create training data.
 
 EQA should be understood as a decision-support component rather than an autonomous legal system. Its advantage is traceability: each extracted answer can be shown with the source span and surrounding report context. Its limitations include ambiguous narrative text, incomplete reports, source-document errors, model uncertainty, jurisdictional variation, and the possibility of selecting a semantically incorrect but literal span. Practical systems should support abstention, source inspection, correction, logging, and professional oversight.
+
+The controlled replication in Section~4.4 provides the clearest demonstration of why evaluation methodology matters. The original headline F1 of 82.88 is best understood as a proof-of-concept score on an easier setup rather than as an error: the original test set was all-answerable, the test set itself was used to select the best checkpoint, and the metric implementation computed start and end token predictions independently. Under the corrected, leakage-free, abstention-inclusive protocol, the same modeling approach scores lower, but the estimate is unbiased. Reporting the drop as a methodological finding---rather than as model underperformance---is the central evaluation contribution of this study.
 
 \section{Threats to Validity and Responsible Use}
 \label{sec:validity}
 
-\paragraph{Construct validity.} EM and F1 measure reference agreement but do not fully measure answer relevance, completeness, or event alignment. The semantic audit complements these metrics.
+\paragraph{Construct validity.} EM and F1 measure reference agreement but do not fully measure answer relevance, completeness, or event alignment. The semantic review complements these metrics.
 
 \paragraph{Internal validity.} Multiple QA pairs derived from one robbery report can cause leakage if they are split independently. Partitioning by \texttt{context\_id} mitigates this risk. Generator versions, prompts, parameters, and retry policies must be preserved for reproducibility.
 
@@ -983,40 +1149,80 @@ EQA should be understood as a decision-support component rather than an autonomo
 \section{Conclusion}
 \label{sec:conclusion}
 
-This paper extends prior work on transformer-based EQA for Spanish robbery reports by evaluating the reliability of the LLM-generated SQuAD v2-style supervision on which such systems depend. The proposed workflow combines candidate generation with automatic span and offset verification, explicit unanswerability labels, semantic auditing, provenance retention, and context-disjoint gold evaluation. The main scientific premise is that a literal span match is necessary but not sufficient for a reliable legal QA annotation. By separating raw, filtered, and LLM-audited data, the study provides a more rigorous basis for evidence-constrained QA in under-resourced legal settings.
+This study set out to answer four research questions.
+
+\textbf{RQ1} asked whether open LLMs can construct usable SQuAD v2-style EQA
+supervision from unlabeled Spanish robbery reports at scale. The answer is
+yes, with controls: two open models generated 100{,}000 candidate rows per
+generator from 20{,}000 contexts with 100\% structural completeness, and the
+quality-control pipeline reduced these to five reproducible dataset variants,
+including an 80{,}726-row merged corpus.
+
+\textbf{RQ2} asked whether literal-span validity and correct offsets are
+sufficient evidence of semantic correctness. The answer is no. The independent
+reviewer pass found that approximately one third of the reviewed rows were
+semantically incorrect despite passing structural checks, with false
+abstentions and wrong time references as the dominant errors. A literal span
+match is therefore necessary but not sufficient for reliable synthetic EQA
+supervision.
+
+\textbf{RQ3} asked whether the resource supports effective fine-tuning across
+encoder families under a leakage-free protocol. The answer is yes, with clear
+differences across capacities: fine-tuning improved all four encoders, with
+XLM-Roberta reaching the highest test F1 (0.7801), while the distilled encoder
+remained weak, and place and object questions were consistently the most
+difficult.
+
+\textbf{RQ4} asked whether the original headline result survives a corrected
+protocol. The answer is no, and the reasons are now identifiable: the original
+all-answerable test set, the use of the test split for model selection, and a
+metric implementation gap. The replication reproduces the original score on
+the original protocol and shows the drop under the corrected protocol,
+turning the original result into a diagnosed baseline.
+
+The take-home message is that a literal string match and a correct character
+offset are necessary but not sufficient conditions for reliable synthetic EQA
+supervision. Practitioners and future researchers should reuse four portable
+artifacts: the deterministic quality-control pipeline, the LLM-based reviewer
+protocol with its error typology, the context-disjoint split methodology, and
+the threshold-calibration protocol. Immediate future work should target the
+weakest question types (place and objects), scale the reviewed sample toward
+approximately 385 rows for a $\pm 5\%$ margin at 95\% confidence, and validate
+the reviewer itself against human judgment on a small sub-sample, since the
+LLM-reviewed subset is not a substitute for human-verified ground truth.
 
 %
 
 
 
 %
-\begin{acknowledgement}
-If you want to include acknowledgments of assistance and the like at the end of an individual chapter please use the \verb|acknowledgement| environment -- it will automatically be rendered in line with the preferred layout.
-\end{acknowledgement}
+% \begin{acknowledgement}
+% If you want to include acknowledgments of assistance and the like at the end of an individual chapter please use the \verb|acknowledgement| environment -- it will automatically be rendered in line with the preferred layout.
+% \end{acknowledgement}
 %
-\ethics{Competing Interests}{Please declare any competing interests
-in the context of your chapter. The following sentences can be regarded as examples.\newline
-This study was funded by [X] [grant number X].\newline
- [Author A] has a received research grant from [Company W].\newline
- [Author B] has received a speaker honorarium from [Company X] and owns stock in [Company~Y].\newline 
- [Author C] is a member of [committee Z].\newline 
-The authors have no conflicts of interest to declare that are relevant to the content of this chapter.}
+% \ethics{Competing Interests}{Please declare any competing interests
+% in the context of your chapter. The following sentences can be regarded as examples.\newline
+% This study was funded by [X] [grant number X].\newline
+%  [Author A] has a received research grant from [Company W].\newline
+%  [Author B] has received a speaker honorarium from [Company X] and owns stock in [Company~Y].\newline 
+%  [Author C] is a member of [committee Z].\newline 
+% The authors have no conflicts of interest to declare that are relevant to the content of this chapter.}
 
 \eject
 
-\ethics{Ethics Approval}{If your chapter includes primary studies with humans please declare the adherence of ethical standards. Example text: This study was performed in line with the principles of the Declaration of Helsinki. Approval was granted by the Ethics Committee of University B (Date.../No. ...).\newline 
- In addition, for human participants, authors are required to include a statement that informed consent (to participate and/or to publish) was obtained from individual participants or parents/guardians if the participant is minor or incapable.\newline
-If animals are studied, authors should make sure that the legal requirements or guidelines in the country and/or state or province for the care and use of animals have been followed or specify that no ethics approval was required.}
+% \ethics{Ethics Approval}{If your chapter includes primary studies with humans please declare the adherence of ethical standards. Example text: This study was performed in line with the principles of the Declaration of Helsinki. Approval was granted by the Ethics Committee of University B (Date.../No. ...).\newline 
+%  In addition, for human participants, authors are required to include a statement that informed consent (to participate and/or to publish) was obtained from individual participants or parents/guardians if the participant is minor or incapable.\newline
+% If animals are studied, authors should make sure that the legal requirements or guidelines in the country and/or state or province for the care and use of animals have been followed or specify that no ethics approval was required.}
 
-\section*{Appendix}
-\addcontentsline{toc}{section}{Appendix}
-%
-%
-When placed at the end of a chapter or contribution (as opposed to at the end of the book), the numbering of tables, figures, and equations in the appendix section continues on from that in the main text. Hence please \textit{do not} use the \verb|appendix| command when writing an appendix at the end of your chapter or contribution. If there is only one the appendix is designated ``Appendix'', or ``Appendix 1'', or ``Appendix 2'', etc. if there is more than one.
+% \section*{Appendix}
+% \addcontentsline{toc}{section}{Appendix}
+% %
+% %
+% When placed at the end of a chapter or contribution (as opposed to at the end of the book), the numbering of tables, figures, and equations in the appendix section continues on from that in the main text. Hence please \textit{do not} use the \verb|appendix| command when writing an appendix at the end of your chapter or contribution. If there is only one the appendix is designated ``Appendix'', or ``Appendix 1'', or ``Appendix 2'', etc. if there is more than one.
 
-\begin{equation}
-a \times b = c
-\end{equation}
+% \begin{equation}
+% a \times b = c
+% \end{equation}
 
 % References are managed with BibTeX from references.bib.
 % Each reference is cited in the text with \cite{key}.
